@@ -1,3 +1,77 @@
-import React,{useState} from 'react';
+import React, { useState } from 'react';
 import { request } from '../api/client.js';
-export default function Users({users,reload,setNotice}){const[x,setX]=useState({name:'',email:'',password:'',role:'viewer'});return <><div className="pageTitle"><div><h1>Users</h1><p>Only Admin can create, disable or change roles.</p></div></div><form className="userForm" onSubmit={async e=>{e.preventDefault();try{await request('/users',{method:'POST',body:JSON.stringify(x)});setX({name:'',email:'',password:'',role:'viewer'});reload()}catch(e){setNotice(e.message)}}><input placeholder="Name" value={x.name} onChange={e=>setX({...x,name:e.target.value})}/><input placeholder="Email" value={x.email} onChange={e=>setX({...x,email:e.target.value})}/><input placeholder="Password" type="password" value={x.password} onChange={e=>setX({...x,password:e.target.value})}/><select value={x.role} onChange={e=>setX({...x,role:e.target.value})}><option>viewer</option><option>planner</option><option>admin</option></select><button>Add User</button></form><div className="tableWrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.name}</td><td>{u.email}</td><td><select value={u.role} onChange={async e=>{await request(`/users/${u.id}`,{method:'PATCH',body:JSON.stringify({role:e.target.value})});reload()}}><option>viewer</option><option>planner</option><option>admin</option></select></td><td><button className="secondary" onClick={async()=>{await request(`/users/${u.id}`,{method:'PATCH',body:JSON.stringify({active:!u.active})});reload()}}>{u.active?'Active':'Disabled'}</button></td></tr>)}</tbody></table></div></>}
+
+export default function Users({ users, reload, setNotice }) {
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'viewer' });
+
+  async function createUser(event) {
+    event.preventDefault();
+    try {
+      await request('/users', { method: 'POST', body: JSON.stringify(form) });
+      setForm({ name: '', email: '', password: '', role: 'viewer' });
+      await reload();
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+
+  async function updateUser(id, patch) {
+    try {
+      await request(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      await reload();
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+
+  return (
+    <>
+      <div className="pageTitle">
+        <div>
+          <h1>Users</h1>
+          <p>Only Admin can create, disable, or change roles.</p>
+        </div>
+      </div>
+
+      <form className="userForm" onSubmit={createUser}>
+        <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+        <input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+        <input placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
+        <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+          <option value="viewer">viewer</option>
+          <option value="planner">planner</option>
+          <option value="admin">admin</option>
+        </select>
+        <button type="submit">Add User</button>
+      </form>
+
+      <div className="tableWrap">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {(users || []).map((user) => (
+              <tr key={user.id}>
+                <td>{user.name}</td>
+                <td>{user.email}</td>
+                <td>
+                  <select value={user.role} onChange={(e) => updateUser(user.id, { role: e.target.value })}>
+                    <option value="viewer">viewer</option>
+                    <option value="planner">planner</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </td>
+                <td>
+                  <button className="secondary" type="button" onClick={() => updateUser(user.id, { active: !user.active })}>
+                    {user.active ? 'Active' : 'Disabled'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
