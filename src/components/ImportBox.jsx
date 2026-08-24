@@ -1,0 +1,7 @@
+import React,{useState} from 'react';
+import { request } from '../api/client.js';
+export default function ImportBox({title,text,preview,confirm,departmentCode,area,reload,setNotice}){
+  const[file,setFile]=useState(null),[data,setData]=useState(null),[busy,setBusy]=useState(false);
+  const send=async(url)=>{if(!file)return;setBusy(true);try{const f=new FormData();f.append('file',file);f.append('department_code',departmentCode);if(area)f.append('area',area);const x=await request(url,{method:'POST',body:f});setData(x);if(url===confirm){setNotice(`${title}: ${x.updated||0} updated, ${x.added||0} added, ${x.skipped||0} skipped`);await reload();}}catch(e){setNotice(e.message)}finally{setBusy(false)}};
+  return <div className="importBox"><h2>{title}</h2><p>{text}</p><input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{setFile(e.target.files[0]);setData(null)}}/><div><button disabled={!file||busy} onClick={()=>send(preview)}>Preview</button>{data&&<button disabled={busy} onClick={()=>send(confirm)}>Confirm Import</button>}</div>{data&&<div className="preview"><strong>{data.totalRows??data.total??0} rows found</strong>{data.unmappedLocations?.length>0&&<span>⚠ {data.unmappedLocations.length} locations need SAP mapping</span>}{data.outsideDepartment?.length>0&&<span>⚠ {data.outsideDepartment.length} rows outside selected department</span>}{data.issues?.length>0&&<span>⚠ {data.issues.length} import issues</span>}<small>{data.message}</small></div>}</div>;
+}
