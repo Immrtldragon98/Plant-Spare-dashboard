@@ -29,7 +29,7 @@ export default function Users({ users, reload, setNotice }) {
       <div className="pageTitle">
         <div>
           <h1>Users</h1>
-          <p>Admin can create users, set usernames, change roles, and disable access.</p>
+          <p>Admin can create users, assign roles, and disable access.</p>
         </div>
       </div>
 
@@ -55,19 +55,7 @@ export default function Users({ users, reload, setNotice }) {
             {(users || []).map((user) => (
               <tr key={user.id}>
                 <td>{user.name}</td>
-                <td>
-                  <input
-                    value={user.username || ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      user.username = value;
-                    }}
-                    onBlur={(e) => {
-                      const next = e.target.value.trim();
-                      if (next && next !== (user.username_original || user.username)) updateUser(user.id, { username: next });
-                    }}
-                  />
-                </td>
+                <td className="code">{user.username || '—'}</td>
                 <td>{user.email}</td>
                 <td>
                   <select value={user.role} onChange={(e) => updateUser(user.id, { role: e.target.value })}>
