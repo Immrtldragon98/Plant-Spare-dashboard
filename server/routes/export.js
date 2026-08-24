@@ -1,2 +1,19 @@
-import {Router} from 'express';import XLSX from 'xlsx';import {q} from '../db.js';import {auth} from '../auth.js';
-const r=Router();r.get('/export/materials',auth,async(req,res)=>{const {department_code=''}=req.query,p=[],scope=department_code?(p.push(department_code),` AND l.department_code=$1`):'';const x=await q(`SELECT m.material_code "Material Code",m.description "Description",m.part_number "Part Number",l.department_name "Department",l.department_code "Department Code",l.area_name "Area",l.equipment_name "Equipment",l.sub_equipment_name "Sub-equipment",l.sap_location_code "SAP Hierarchy",u.required_qty "Required Qty",m.uom "UOM",m.store_qty "Available in Store",m.pr_qty "In PR",m.po_qty "In PO",m.manufacturer "Manufacturer",m.vendor "Vendor",u.notes "Notes" FROM material_usages u JOIN materials m ON m.id=u.material_id JOIN locations l ON l.id=u.location_id WHERE m.active=true AND u.active=true${scope} ORDER BY l.department_name,l.area_name,l.equipment_name,m.material_code`,p);const ws=XLSX.utils.json_to_sheet(x.rows),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Spares');const buf=XLSX.write(wb,{type:'buffer',bookType:'xlsx'});res.setHeader('Content-Disposition','attachment; filename="Spare-Materials.xlsx"');res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(buf)});export default r;
+import {Router} from 'express';
+import XLSX from 'xlsx';
+import {q} from '../db.js';
+import {auth} from '../auth.js';
+
+const r=Router();
+r.get('/export/materials',auth,async(req,res)=>{
+  const {department_code='',area='',discipline=''}=req.query,p=[],w=['m.active=true','u.active=true'];
+  if(department_code){p.push(department_code);w.push(`l.department_code=$${p.length}`)}
+  if(area){p.push(area);w.push(`l.area_name=$${p.length}`)}
+  if(discipline){p.push(discipline);w.push(`u.discipline=$${p.length}`)}
+  const x=await q(`SELECT m.material_code "Material Code",m.spare_name "Spare Name",m.description "Description",m.part_number "Part Number",l.department_name "Department",l.department_code "Department Code",l.area_name "Area",l.equipment_name "Equipment",l.sub_equipment_name "Sub-equipment",u.discipline "Discipline",l.sap_location_code "SAP Hierarchy",u.required_qty "Required Qty",m.uom "UOM",m.store_qty "Available in Store",m.pr_qty "In PR",m.po_qty "In PO",m.manufacturer "Manufacturer",m.vendor "Vendor",u.notes "Notes" FROM material_usages u JOIN materials m ON m.id=u.material_id JOIN locations l ON l.id=u.location_id WHERE ${w.join(' AND ')} ORDER BY l.area_name,l.equipment_name,m.spare_name,m.material_code`,p);
+  const ws=XLSX.utils.json_to_sheet(x.rows),wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Spares');
+  const buf=XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
+  res.setHeader('Content-Disposition','attachment; filename="Spare-Materials.xlsx"');
+  res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(buf);
+});
+export default r;
