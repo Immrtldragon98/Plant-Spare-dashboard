@@ -4,42 +4,59 @@ const clean=v=>String(v??'').trim();
 const norm=v=>clean(v).toLowerCase().replace(/[._\-/]+/g,' ').replace(/\s+/g,' ');
 const asNum=v=>{if(v===null||v===undefined||clean(v)==='')return null;const m=String(v).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0]):null};
 const emptyCodes=new Set(['NOT MADE','N/A','NA','NOT AVAILABLE','TO BE CREATED','TBC','MAKE CODE','MAKE CODE AND ORDER','MAKE CODE FOR ORDER']);
+
 function readWorkbook(buffer){
   try{return XLSX.read(buffer,{type:'buffer'})}
   catch(error){
     const message=String(error?.message||error||'');
     if(/password|encrypt|crypto|protected/i.test(message))throw new Error('Password-protected Excel files are not supported. Open the file in Excel, Save As an unprotected .xlsx, then upload that copy.');
-    throw error;
+    throw new Error(`Could not read Excel file: ${message||'unknown workbook error'}`);
   }
 }
-function materialCode(v){
+
+export function canonicalMaterialCode(v){
   const raw=clean(v).toUpperCase();
   if(!raw||emptyCodes.has(raw)||raw==='MATERIAL CODE')return null;
   const compact=raw.replace(/\s+/g,'');
   if(/^\d{6,18}$/.test(compact))return compact;
-  const m=raw.match(/\b[A-Z]{2,5}\d{6,}[A-Z0-9-]*\b/);
+  const m=raw.match(/\b[A-Z]{2,6}\d{5,}[A-Z0-9-]*\b/);
   return m?m[0]:null;
 }
+
 const noteRow=v=>/^(MAINTENANCE|MAINTANCE|SPARE|PLANNING)\s*NOTE$/i.test(clean(v))||/^\d+\.\s+/.test(clean(v));
 
 const aliases={
-  material_code:['material code','code','new code','materialcode','mat code','material'],
+  material_code:['material code','material','material number','material no','material no.','material id','mat code','mat no','mat no.','matnr','new code','materialcode'],
   spare_name:['spare name','part name','item name','spare','name'],
-  description:['description','material desc','short description','short text','item description'],
+  description:['description','material description','material desc','short description','short text','item description'],
   part_number:['part number','part no','part no.','item part no','item- part no','item part number','pn'],
   required_qty:['tiq','qty','quantity','inst quantity','installed quantity','per line','required qty'],
   discipline:['discipline','trade','category'],
-  vendor:['vendor','suppl','supplier','supplier name'],
+  vendor:['vendor','vendor name','supplier','supplier name','suppl','lifnr'],
   manufacturer:['manufacturer','make','maker'],
-  uom:['uom','unit'],
+  uom:['uom','unit','base unit of measure','base uom'],
   notes:['notes','note','effect on production','remarks'],
-  store_qty:['available in store','store','store qty','unrestricted stock','available stock','stock'],
-  pr_qty:['in pr','pr','pr qty','purchase requisition qty','open pr qty'],
-  po_qty:['in po','po','po qty','purchase order qty','open po qty'],
+  store_qty:['available in store','store','store qty','unrestricted stock','unrestricted use stock','unrestricted use','unrestricted','unrestricted stock qty','available stock','stock','labst'],
+  pr_qty:['in pr','pr','pr qty','open pr','open pr qty','purchase requisition qty','purchase requisition','requisition qty'],
+  po_qty:['in po','po','po qty','open po','open po qty','purchase order qty','purchase order','ordered qty'],
   sap_location_code:['sap hierarchy','sap location','functional location','functional loc','func location','func loc','floc','technical object','hierarchy code']
 };
-function keyFor(header){const n=norm(header);for(const[k,vals]of Object.entries(aliases)){if(vals.some(x=>n===x))return k}return null}
-function findHeader(rows){let best={i:0,score:-1,map:{}};for(let i=0;i<Math.min(rows.length,15);i++){const map={};let score=0;rows[i].forEach((h,j)=>{const k=keyFor(h);if(k&&map[k]===undefined){map[k]=j;score++}});if(score>best.score)best={i,score,map}}return best}
+
+function keyFor(header){
+  const n=norm(header);
+  for(const[k,vals]of Object.entries(aliases))if(vals.some(x=>n===norm(x)))return k;
+  return null;
+}
+
+function findHeader(rows,maxRows=50){
+  let best={i:0,score:-1,map:{},headers:[]};
+  for(let i=0;i<Math.min(rows.length,maxRows);i++){
+    const map={};let score=0;
+    rows[i].forEach((h,j)=>{const k=keyFor(h);if(k&&map[k]===undefined){map[k]=j;score++}});
+    if(score>best.score)best={i,score,map,headers:rows[i].map(clean).filter(Boolean)};
+  }
+  return best;
+}
 function pick(row,map,key){return map[key]===undefined?null:row[map[key]]}
 
 const equipMap={
@@ -67,16 +84,21 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
     if(norm(sheetName)==='sheet1')continue;
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:null,raw:false});
     const h=findHeader(rows);
-    if(!h.map.material_code){issues.push({sheet:sheetName,reason:'No material-code column recognized'});continue}
+    if(h.map.material_code===undefined){issues.push({sheet:sheetName,reason:'No Material Code column recognized',headers:h.headers});continue}
     const loc=sheetLocation(sheetName);
     for(let i=h.i+1;i<rows.length;i++){
       const row=rows[i];
       const rawCode=clean(pick(row,h.map,'material_code'));
-      let code=materialCode(rawCode);
+      let code=canonicalMaterialCode(rawCode);
       let spareName=clean(pick(row,h.map,'spare_name'))||null;
       let description=clean(pick(row,h.map,'description'))||null;
-      const descCode=materialCode(description);
-      if(!code&&descCode&&clean(description).toUpperCase()===descCode){code=descCode;spareName=spareName||rawCode||null;description=null}
+      const descCode=canonicalMaterialCode(description);
+      if(!code&&descCode&&clean(description).toUpperCase()===descCode){
+        code=descCode;
+        spareName=spareName||rawCode||null;
+        description=null;
+        issues.push({sheet:sheetName,row:i+1,reason:`Suspected swapped columns corrected in preview: ${rawCode} → ${descCode}`});
+      }
       if(!code&&rawCode&&!spareName&&!noteRow(rawCode))spareName=rawCode;
       if(!code&&!spareName&&!description)continue;
       if(!code&&noteRow(rawCode)&&!description)continue;
@@ -97,21 +119,27 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
         sap_location_code:clean(pick(row,h.map,'sap_location_code'))||((departmentCode==='3102_CH2'&&area==='WRM'&&loc.equipment==='Coiler')?'3102_CH2_WRM_Coiler':null),
         source_sheet:sheetName,source_row:i+1
       });
-      if(rawCode&&!code)issues.push({sheet:sheetName,row:i+1,reason:`Material code not recognized; kept as spare name: ${rawCode}`});
+      if(rawCode&&!code)issues.push({sheet:sheetName,row:i+1,reason:`Material Code not recognized; value kept out of Material Code: ${rawCode}`});
     }
   }
   return {materials,issues,sheets:wb.SheetNames};
 }
 
 export function parseSapStatusExcel(buffer){
-  const wb=readWorkbook(buffer),byMaterial=new Map(),issues=[];
+  const wb=readWorkbook(buffer),byMaterial=new Map(),issues=[],sheetDiagnostics=[];
   for(const sheetName of wb.SheetNames){
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:null,raw:false});
-    const h=findHeader(rows);
-    if(!h.map.material_code)continue;
+    const h=findHeader(rows,80);
+    sheetDiagnostics.push({sheet:sheetName,headerRow:h.i+1,recognized:Object.keys(h.map),headers:h.headers});
+    if(h.map.material_code===undefined){issues.push({sheet:sheetName,reason:'No Material Code column recognized',headers:h.headers});continue}
     for(let i=h.i+1;i<rows.length;i++){
-      const row=rows[i],code=materialCode(pick(row,h.map,'material_code'));
-      if(!code)continue;
+      const row=rows[i];
+      const rawCode=pick(row,h.map,'material_code');
+      const code=canonicalMaterialCode(rawCode);
+      if(!code){
+        if(clean(rawCode))issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code ignored: ${clean(rawCode)}`});
+        continue;
+      }
       const incoming={material_code:code,store_qty:asNum(pick(row,h.map,'store_qty')),pr_qty:asNum(pick(row,h.map,'pr_qty')),po_qty:asNum(pick(row,h.map,'po_qty')),vendor:clean(pick(row,h.map,'vendor'))||null,sap_location_code:clean(pick(row,h.map,'sap_location_code'))||null,source_sheet:sheetName,source_row:i+1};
       const existing=byMaterial.get(code);
       if(!existing)byMaterial.set(code,incoming);else{
@@ -121,6 +149,6 @@ export function parseSapStatusExcel(buffer){
     }
   }
   const rowsOut=[...byMaterial.values()];
-  if(!rowsOut.length)issues.push({reason:'No rows found. SAP export must include Material Code and Store/PR/PO or Vendor data.'});
-  return {rows:rowsOut,issues};
+  if(!rowsOut.length)issues.push({reason:'No valid SAP rows found. The file must contain a Material Code/Material/Material Number column. Store/PR/PO/Vendor columns are optional.'});
+  return {rows:rowsOut,issues,sheetDiagnostics};
 }
