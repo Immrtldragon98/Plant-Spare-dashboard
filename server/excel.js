@@ -41,13 +41,15 @@ const aliases={
   uom:['uom','unit','base unit of measure','base uom','order unit'],
   notes:['notes','note','effect on production','remarks'],
   store_qty:['available in store','store','store qty','unrestricted stock','unrestricted use stock','unrestricted use','unrestricted','unrestricted stock qty','available stock','stock','labst'],
-  pr_qty:['in pr','pr qty','open pr','open pr qty','pr open qty','purchase requisition qty','purchase requisition open qty','remaining pr qty','requisition quantity'],
+  pr_qty:['in pr','pr qty','open pr','open pr qty','pr open qty','purchase requisition qty','purchase requisition open qty','remaining pr qty','requisition quantity','order quantity'],
   po_qty:['in po','po qty','open po','open po qty','po open qty','purchase order qty','remaining po qty','still to be delivered qty','still to be delivered'],
   sap_location_code:['sap hierarchy','sap location','functional location','functional loc','func location','func loc','floc','technical object','hierarchy code']
 };
 
 function keyFor(header){
   const n=norm(header);
+  if(n.includes('still to be delivered'))return 'po_qty';
+  if(n==='order quantity'||n.includes('order quantity'))return 'pr_qty';
   for(const[k,vals]of Object.entries(aliases))if(vals.some(x=>n===norm(x)))return k;
   return null;
 }
@@ -119,7 +121,7 @@ function rowsForTypedImport(buffer,type){
     sheetDiagnostics.push({sheet:sheetName,headerRow:h.i+1,recognized:Object.keys(h.map),headers:h.headers});
     if(h.map.material_code===undefined){issues.push({sheet:sheetName,reason:'No Material/Material Code column recognized',headers:h.headers});continue}
     const required=type==='stock'?'store_qty':type==='open_pr'?'pr_qty':type==='open_po'?'po_qty':null;
-    if(required&&h.map[required]===undefined){issues.push({sheet:sheetName,reason:`No ${type==='stock'?'Stock':type==='open_pr'?'Open PR Qty':'Open PO Qty / Still to be delivered (qty)'} column recognized`,headers:h.headers});continue}
+    if(required&&h.map[required]===undefined){issues.push({sheet:sheetName,reason:`No ${type==='stock'?'Stock':type==='open_pr'?'PR Qty / Order Quantity':'PO Qty / Still to be delivered (qty)'} column recognized`,headers:h.headers});continue}
     for(let i=h.i+1;i<rows.length;i++){
       const row=rows[i],rawCode=pick(row,h.map,'material_code'),code=canonicalMaterialCode(rawCode);
       if(!code){if(clean(rawCode))issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code ignored: ${clean(rawCode)}`});continue}
