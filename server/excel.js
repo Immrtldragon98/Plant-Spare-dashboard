@@ -4,6 +4,7 @@ const clean=v=>String(v??'').trim();
 const norm=v=>clean(v).toLowerCase().replace(/[._\-/()]+/g,' ').replace(/\s+/g,' ');
 const asNum=v=>{if(v===null||v===undefined||clean(v)==='')return null;const m=String(v).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0]):null};
 const emptyCodes=new Set(['NOT MADE','N/A','NA','NOT AVAILABLE','TO BE CREATED','TBC','MAKE CODE','MAKE CODE AND ORDER','MAKE CODE FOR ORDER']);
+const vendorName=v=>{const s=clean(v);if(!s)return null;const withoutCode=s.replace(/^\d{4,}\s+/, '').trim();return withoutCode||null};
 
 function readWorkbook(buffer){
   try{return XLSX.read(buffer,{type:'buffer'})}
@@ -35,7 +36,7 @@ const aliases={
   part_number:['part number','part no','part no.','item part no','item- part no','item part number','pn'],
   required_qty:['tiq','qty','quantity','inst quantity','installed quantity','per line','required qty'],
   discipline:['discipline','trade','category'],
-  vendor:['vendor','vendor name','supplier','supplier name','name of supplier','suppl','lifnr'],
+  vendor:['vendor','vendor name','supplier name','name of supplier','supplier','suppl','lifnr'],
   manufacturer:['manufacturer','make','maker'],
   uom:['uom','unit','base unit of measure','base uom','order unit'],
   notes:['notes','note','effect on production','remarks'],
@@ -122,7 +123,7 @@ function rowsForTypedImport(buffer,type){
     for(let i=h.i+1;i<rows.length;i++){
       const row=rows[i],rawCode=pick(row,h.map,'material_code'),code=canonicalMaterialCode(rawCode);
       if(!code){if(clean(rawCode))issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code ignored: ${clean(rawCode)}`});continue}
-      rawRows.push({material_code:code,store_qty:asNum(pick(row,h.map,'store_qty')),pr_qty:asNum(pick(row,h.map,'pr_qty')),po_qty:asNum(pick(row,h.map,'po_qty')),vendor:clean(pick(row,h.map,'vendor'))||null,sap_location_code:clean(pick(row,h.map,'sap_location_code'))||null,source_sheet:sheetName,source_row:i+1});
+      rawRows.push({material_code:code,store_qty:asNum(pick(row,h.map,'store_qty')),pr_qty:asNum(pick(row,h.map,'pr_qty')),po_qty:asNum(pick(row,h.map,'po_qty')),vendor:type==='open_po'?vendorName(pick(row,h.map,'vendor')):(clean(pick(row,h.map,'vendor'))||null),sap_location_code:clean(pick(row,h.map,'sap_location_code'))||null,source_sheet:sheetName,source_row:i+1});
     }
   }
   return {rawRows,issues,sheetDiagnostics};
