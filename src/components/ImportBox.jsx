@@ -1,10 +1,11 @@
-import React,{useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import { request } from '../api/client.js';
 
 const disciplines=['Mechanical','Electrical','Instrumentation','Operation','Process','Common / Other'];
 
-export default function ImportBox({title,text,preview,confirm,departmentCode,area,showDiscipline=false,requireArea=false,uploadType='',reload,setNotice}){
-  const[file,setFile]=useState(null),[data,setData]=useState(null),[busy,setBusy]=useState(false),[discipline,setDiscipline]=useState('');
+export default function ImportBox({title,text,preview,confirm,departmentCode,area,showDiscipline=false,requireArea=false,uploadType='',initialFile=null,reload,setNotice}){
+  const[file,setFile]=useState(initialFile),[data,setData]=useState(null),[busy,setBusy]=useState(false),[discipline,setDiscipline]=useState('');
+  useEffect(()=>{if(initialFile){setFile(initialFile);setData(null)}},[initialFile]);
   const send=async(url)=>{
     if(!file)return;
     if(!departmentCode){setNotice('Select a Department before importing');return}
@@ -20,6 +21,7 @@ export default function ImportBox({title,text,preview,confirm,departmentCode,are
     <h2>{title}</h2><p>{text}</p>
     <div className="importDestination"><span>Destination</span><strong>{departmentCode||'No department'}{area?` → ${area}`:''}</strong></div>
     {showDiscipline&&<label>Default discipline<select value={discipline} onChange={e=>setDiscipline(e.target.value)}><option value="">Use Excel value / leave blank</option>{disciplines.map(d=><option key={d}>{d}</option>)}</select></label>}
+    {file&&<div className="selectedFile"><span>Selected file</span><strong>{file.name}</strong></div>}
     <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{setFile(e.target.files?.[0]||null);setData(null)}}/>
     <div><button disabled={!file||busy||!departmentCode||(requireArea&&!area)} onClick={()=>send(preview)}>Preview</button>{data&&<button disabled={busy} onClick={()=>send(confirm)}>Confirm Import</button>}</div>
     {data&&<div className="preview"><strong>{data.totalRows??data.total??0} material codes found</strong>{data.uploadTypeLabel&&<span>Type: {data.uploadTypeLabel}</span>}{Number.isFinite(data.exactMatches)&&<span>✓ Exact Material Code matches: {data.exactMatches}</span>}{data.safeCorrections?.length>0&&<span>↔ Safe Material Code corrections: {data.safeCorrections.length}</span>}{data.missingMaterialCodes?.length>0&&<span>⚠ Material Codes not found: {data.missingMaterialCodes.length}</span>}{data.disciplineCounts&&<span>Discipline: {Object.entries(data.disciplineCounts).map(([k,v])=>`${k} ${v}`).join(' · ')}</span>}{data.unmappedLocations?.length>0&&<span>⚠ {data.unmappedLocations.length} locations need SAP mapping</span>}{data.issues?.length>0&&<span>⚠ {data.issues.length} file/header issues</span>}<small>{data.message}</small>{data.safeCorrections?.slice(0,5).map((x,i)=><small key={i}>Fix: {x.current_material_code||'(bad code)'} → {x.material_code} ({x.reason})</small>)}{data.missingMaterialCodes?.slice(0,8).length>0&&<small>Missing: {data.missingMaterialCodes.slice(0,8).join(', ')}{data.missingMaterialCodes.length>8?' …':''}</small>}</div>}
