@@ -1,5 +1,5 @@
 import React from 'react';
-const Card=({n,t,onClick})=><button className="card" onClick={onClick}><strong>{n??0}</strong><span>{t}</span></button>;
+const Card=({n,t,onClick})=><div className="card" role={onClick?'button':undefined} tabIndex={onClick?0:undefined} onClick={onClick} onKeyDown={e=>{if(onClick&&(e.key==='Enter'||e.key===' '))onClick()}} style={onClick?{cursor:'pointer'}:undefined}><strong>{n??0}</strong><span>{t}</span></div>;
 const disciplines=['Mechanical','Electrical','Instrumentation','Operation','Process','Common / Other'];
 export default function Dashboard({stats,setTab,department,filters,setFilters,options}){
   const set=(key,value)=>setFilters(f=>({...f,[key]:value,equipment:'',sub_equipment:''}));
