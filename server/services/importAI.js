@@ -26,6 +26,10 @@ const canonical={
   stock_p2:['stock in p2','p2 stock'],
   total_stock:['total stock','available total stock'],
   consumption_p2:['consumption p2','consumption (p2)','p2 consumption'],
+  consumption_fy24:['fy24 consumption','consumption fy24','fy 24 consumption','fy24'],
+  consumption_fy25:['fy25 consumption','consumption fy25','fy 25 consumption','fy25'],
+  consumption_fy26:['fy26 consumption','consumption fy26','fy 26 consumption','fy26'],
+  consumption_fy27:['fy27 consumption','consumption fy27','fy 27 consumption','fy27'],
   last_issue_date:['last issue date','last issued date','last consumption date'],
   ideal_pr_qty:['ideal pr qty for p2','ideal pr qty','recommended pr qty'],
   vendor_name:['name of supplier','supplier name','vendor name','supplier','vendor'],
@@ -84,7 +88,7 @@ export async function analyzeImport(buffer){
   const summary=workbookSummary(buffer),fallback=localGuess(summary);
   const base=(process.env.AI_IMPORT_BASE_URL||'').replace(/\/$/,''),key=process.env.AI_IMPORT_API_KEY||'',model=process.env.AI_IMPORT_MODEL||'';
   if(!base||!key||!model)return {aiEnabled:false,analysis:fallback,summary};
-  const prompt=`You analyze plant spare/procurement Excel layouts. Return JSON only. Determine fileType from: master, stock, open_pr, open_po, rgp, nrgp, pr_planning. Business rule for this app: Order Quantity maps to PR Qty; Still to be delivered (qty) maps to PO Qty. A PR planning sheet may contain Safety Stock to Maintain, Total Stock, Consumption, Last Issue Date, Ideal PR Qty, current PR Qty, Unit Price, Lead Time, Consumption Plan and Justification. Propose column mappings using only columns actually visible. Allowed mapping keys: ${Object.keys(canonical).join(', ')}, plant, sap_location_code. Material Code values must match exactly 3 uppercase letters followed by 12 digits; never infer or invent a code. Do not modify data. Include confidence 0..1 and warnings. Workbook sample: ${JSON.stringify(summary)}`;
+  const prompt=`You analyze plant spare/procurement Excel layouts. Return JSON only. Determine fileType from: master, stock, open_pr, open_po, rgp, nrgp, pr_planning. Business rule for this app: Order Quantity maps to PR Qty; Still to be delivered (qty) maps to PO Qty. A PR/FY planning sheet may contain Safety Stock to Maintain, Total Stock, FY24/FY25/FY26/FY27 consumption, P2 Consumption, Last Issue Date, Ideal PR Qty, current PR Qty, Unit Price, Lead Time, Consumption Plan and Justification. Propose column mappings using only columns actually visible. Allowed mapping keys: ${Object.keys(canonical).join(', ')}, plant, sap_location_code. Material Code values must match exactly 3 uppercase letters followed by 12 digits; never infer or invent a code. Do not modify data. Include confidence 0..1 and warnings. Workbook sample: ${JSON.stringify(summary)}`;
   try{
     const resp=await fetch(`${base}/chat/completions`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages:[{role:'system',content:'You are a cautious schema-mapping assistant for industrial SAP/Excel data. Never invent data.'},{role:'user',content:prompt}],temperature:0.1,response_format:{type:'json_object'}})});
     if(!resp.ok)throw new Error(`AI provider returned ${resp.status}`);
