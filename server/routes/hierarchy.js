@@ -4,12 +4,6 @@ import {auth,allow} from '../auth.js';
 import {getDepartment} from '../services/locationService.js';
 const r=Router();
 
-const normalizedLocationMatch=`department_code=$1
-  AND lower(regexp_replace(trim(area_name),'[^a-zA-Z0-9]+','','g'))=lower(regexp_replace(trim($2),'[^a-zA-Z0-9]+','','g'))
-  AND lower(regexp_replace(trim(COALESCE(equipment_name,'')),'[^a-zA-Z0-9]+','','g'))=lower(regexp_replace(trim(COALESCE($3,'')),'[^a-zA-Z0-9]+','','g'))
-  AND lower(regexp_replace(trim(COALESCE(sub_equipment_name,'')),'[^a-zA-Z0-9]+','','g'))=lower(regexp_replace(trim(COALESCE($4,'')),'[^a-zA-Z0-9]+','','g'))
-  AND active=true`;
-
 r.get('/hierarchy',auth,async(req,res)=>{
   const p=[],where=['l.active=true'];
   if(req.query.department_code){p.push(req.query.department_code);where.push(`l.department_code=$${p.length}`)}
@@ -42,6 +36,19 @@ r.get('/hierarchy',auth,async(req,res)=>{
   res.json(x.rows)
 });
 
+const findDuplicate=async({excludeId=null,departmentCode,areaName,equipmentName='',subEquipmentName=''})=>{
+  const params=[];let idClause='';
+  if(excludeId!==null){params.push(excludeId);idClause=`id<>$${params.length} AND `}
+  params.push(departmentCode,areaName,equipmentName,subEquipmentName);
+  const base=params.length-3;
+  const sql=`SELECT * FROM locations WHERE ${idClause}department_code=$${base}
+    AND lower(regexp_replace(trim(area_name),'[^a-zA-Z0-9]+','','g'))=lower(regexp_replace(trim($${base+1}),'[^a-zA-Z0-9]+','','g'))
+    AND lower(regexp_replace(trim(COALESCE(equipment_name,'')),'[^a-zA-Z0-9]+','','g'))=lower(regexp_replace(trim(COALESCE($${base+2},'')),'[^a-zA-Z0-9]+','','g'))
+    AND lower(regexp_replace(trim(COALESCE(sub_equipment_name,'')),'[^a-zA-Z0-9]+','','g'))=lower(regexp_replace(trim(COALESCE($${base+3},'')),'[^a-zA-Z0-9]+','','g'))
+    AND active=true ORDER BY id LIMIT 1`;
+  return (await q(sql,params)).rows[0];
+};
+
 r.post('/hierarchy',auth,allow('admin'),async(req,res)=>{
   const x=req.body,dept=await getDepartment(x.department_code);if(!dept)return res.status(400).json({error:'Unknown sub-department code'});if(!x.area_name)return res.status(400).json({error:'Equipment is required'});
   const subDepartmentName=String(x.department_name||dept.department_name||'').trim();
@@ -50,8 +57,8 @@ r.post('/hierarchy',auth,allow('admin'),async(req,res)=>{
     await q('UPDATE locations SET department_name=$1,updated_at=NOW() WHERE department_code=$2',[subDepartmentName,x.department_code]);
   }
   await q(`INSERT INTO areas(department_id,area_code,area_name) VALUES($1,$2,$3) ON CONFLICT(department_id,area_name) DO UPDATE SET area_code=COALESCE(EXCLUDED.area_code,areas.area_code),active=true,updated_at=NOW()`,[dept.id,x.area_code||null,x.area_name]);
-  const existing=(await q(`SELECT * FROM locations WHERE ${normalizedLocationMatch} ORDER BY id LIMIT 1`,[x.department_code,x.area_name,x.equipment_name||'',x.sub_equipment_name||''])).rows[0];
-  if(existing)return res.status(409).json({error:'This Equipment / Sub-equipment already exists. Edit that row to merge or update it.'});
+  const existing=await findDuplicate({departmentCode:x.department_code,areaName:x.area_name,equipmentName:x.equipment_name||'',subEquipmentName:x.sub_equipment_name||''});
+  if(existing)return res.status(409).json({error:'This Equipment / Sub-equipment already exists. Edit one of the rows to merge them.'});
   const y=await q(`INSERT INTO locations(plant_code,department_code,department_name,area_code,area_name,equipment_code,equipment_name,sub_equipment_code,sub_equipment_name,sap_location_code) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[dept.plant_code,dept.department_code,subDepartmentName||dept.department_name,x.area_code||null,x.area_name,x.equipment_code||null,x.equipment_name||null,x.sub_equipment_code||null,x.sub_equipment_name||null,x.sap_location_code||null]);res.json(y.rows[0])
 });
 
@@ -59,8 +66,7 @@ r.put('/hierarchy/:id',auth,allow('admin'),async(req,res)=>{
   const old=(await q('SELECT * FROM locations WHERE id=$1',[req.params.id])).rows[0];if(!old)return res.status(404).json({error:'Location not found'});
   const x={...old,...req.body},dept=await getDepartment(x.department_code);if(!dept)return res.status(400).json({error:'Unknown sub-department code'});
   const subDepartmentName=String(x.department_name||dept.department_name||'').trim();
-  const duplicate=(await q(`SELECT * FROM locations WHERE id<>$1 AND ${normalizedLocationMatch.replaceAll('$1','$2').replaceAll('$2','$3').replaceAll('$3','$4').replaceAll('$4','$5')} ORDER BY id LIMIT 1`,[req.params.id,x.department_code,x.area_name,x.equipment_name||'',x.sub_equipment_name||''])).rows[0];
-
+  const duplicate=await findDuplicate({excludeId:Number(req.params.id),departmentCode:x.department_code,areaName:x.area_name,equipmentName:x.equipment_name||'',subEquipmentName:x.sub_equipment_name||''});
   const client=await pool.connect();
   try{
     await client.query('BEGIN');
@@ -81,8 +87,8 @@ r.put('/hierarchy/:id',auth,allow('admin'),async(req,res)=>{
         WHERE source.location_id=$1 AND target.location_id=$2 AND target.material_id=source.material_id`,[sourceId,targetId,req.user.id]);
       await client.query(`UPDATE material_usages source SET active=false,updated_by=$3,updated_at=NOW()
         WHERE source.location_id=$1 AND EXISTS(SELECT 1 FROM material_usages target WHERE target.location_id=$2 AND target.material_id=source.material_id)`,[sourceId,targetId,req.user.id]);
-      await client.query(`UPDATE material_usages SET location_id=$2,updated_by=$3,updated_at=NOW()
-        WHERE location_id=$1 AND NOT EXISTS(SELECT 1 FROM material_usages target WHERE target.location_id=$2 AND target.material_id=material_usages.material_id)`,[sourceId,targetId,req.user.id]);
+      await client.query(`UPDATE material_usages source SET location_id=$2,updated_by=$3,updated_at=NOW()
+        WHERE source.location_id=$1 AND NOT EXISTS(SELECT 1 FROM material_usages target WHERE target.location_id=$2 AND target.material_id=source.material_id)`,[sourceId,targetId,req.user.id]);
       await client.query(`UPDATE locations SET
         plant_code=$1,department_code=$2,department_name=$3,area_code=$4,area_name=$5,
         equipment_code=COALESCE($6,equipment_code),equipment_name=COALESCE($7,equipment_name),
