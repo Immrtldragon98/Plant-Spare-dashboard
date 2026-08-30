@@ -4,7 +4,7 @@ const clean=v=>String(v??'').trim();
 const norm=v=>clean(v).toLowerCase().replace(/[._\-/()]+/g,' ').replace(/\s+/g,' ');
 const asNum=v=>{if(v===null||v===undefined||clean(v)==='')return null;const m=String(v).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0]):null};
 const emptyCodes=new Set(['NOT MADE','N/A','NA','NOT AVAILABLE','TO BE CREATED','TBC','MAKE CODE','MAKE CODE AND ORDER','MAKE CODE FOR ORDER']);
-const vendorName=v=>{const s=clean(v);if(!s)return null;const withoutCode=s.replace(/^\d{4,}\s+/, '').trim();return withoutCode||null};
+export const vendorName=v=>{const s=clean(v);if(!s)return null;if(/^\d+$/.test(s))return null;const withoutCode=s.replace(/^\d{4,}\s+/, '').trim();return withoutCode||null};
 
 function readWorkbook(buffer){
   try{return XLSX.read(buffer,{type:'buffer'})}
@@ -34,13 +34,13 @@ const aliases={
   spare_name:['spare name','part name','item name','spare','name'],
   description:['description','material description','material desc','short description','short text','item description'],
   part_number:['part number','part no','part no.','item part no','item- part no','item part number','pn'],
-  required_qty:['tiq','qty','quantity','inst quantity','installed quantity','per line','required qty'],
+  required_qty:['tiq','qty','quantity','inst quantity','installed quantity','per line','required qty','safety stock to maintain'],
   discipline:['discipline','trade','category'],
   vendor:['vendor','vendor name','supplier name','name of supplier','supplier','suppl','lifnr'],
   manufacturer:['manufacturer','make','maker'],
   uom:['uom','unit','base unit of measure','base uom','order unit'],
-  notes:['notes','note','effect on production','remarks'],
-  store_qty:['available in store','store','store qty','unrestricted stock','unrestricted use stock','unrestricted use','unrestricted','unrestricted stock qty','available stock','stock','labst'],
+  notes:['notes','note','effect on production','remarks','justification'],
+  store_qty:['available in store','store','store qty','unrestricted stock','unrestricted use stock','unrestricted use','unrestricted','unrestricted stock qty','available stock','stock','labst','total stock'],
   pr_qty:['in pr','pr qty','open pr','open pr qty','pr open qty','purchase requisition qty','purchase requisition open qty','remaining pr qty','requisition quantity','order quantity'],
   po_qty:['in po','po qty','open po','open po qty','po open qty','purchase order qty','remaining po qty','still to be delivered qty','still to be delivered'],
   sap_location_code:['sap hierarchy','sap location','functional location','functional loc','func location','func loc','floc','technical object','hierarchy code']
@@ -91,7 +91,8 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:null,raw:false});
     const h=findHeader(rows);
     if(h.map.material_code===undefined){issues.push({sheet:sheetName,reason:'No Material Code column recognized',headers:h.headers});continue}
-    const loc=sheetLocation(sheetName);
+    const detected=sheetLocation(sheetName);
+    const subEquipment=detected.sub_equipment||detected.equipment||clean(sheetName);
     for(let i=h.i+1;i<rows.length;i++){
       const row=rows[i];
       const rawCode=clean(pick(row,h.map,'material_code'));
@@ -106,7 +107,7 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
       if(!code&&rawCode&&!spareName&&!noteRow(rawCode))spareName=rawCode;
       if(!code&&!spareName&&!description)continue;
       if(!code&&noteRow(rawCode)&&!description)continue;
-      materials.push({material_code:code,spare_name:spareName,description,part_number:clean(pick(row,h.map,'part_number'))||null,required_qty:asNum(pick(row,h.map,'required_qty')),discipline:clean(pick(row,h.map,'discipline'))||defaultDiscipline||null,uom:clean(pick(row,h.map,'uom'))||null,vendor:clean(pick(row,h.map,'vendor'))||null,manufacturer:clean(pick(row,h.map,'manufacturer'))||null,notes:clean(pick(row,h.map,'notes'))||null,area,equipment:loc.equipment,sub_equipment:loc.sub_equipment,sap_location_code:clean(pick(row,h.map,'sap_location_code'))||((departmentCode==='3102_CH2'&&area==='WRM'&&loc.equipment==='Coiler')?'3102_CH2_WRM_Coiler':null),source_sheet:sheetName,source_row:i+1});
+      materials.push({material_code:code,spare_name:spareName,description,part_number:clean(pick(row,h.map,'part_number'))||null,required_qty:asNum(pick(row,h.map,'required_qty')),discipline:clean(pick(row,h.map,'discipline'))||defaultDiscipline||null,uom:clean(pick(row,h.map,'uom'))||null,vendor:vendorName(pick(row,h.map,'vendor')),manufacturer:clean(pick(row,h.map,'manufacturer'))||null,notes:clean(pick(row,h.map,'notes'))||null,area,equipment:area,sub_equipment:subEquipment,sap_location_code:clean(pick(row,h.map,'sap_location_code'))||null,source_sheet:sheetName,source_row:i+1});
       if(rawCode&&!code)issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code kept out of Material Code: ${rawCode}`});
     }
   }
@@ -125,7 +126,7 @@ function rowsForTypedImport(buffer,type){
     for(let i=h.i+1;i<rows.length;i++){
       const row=rows[i],rawCode=pick(row,h.map,'material_code'),code=canonicalMaterialCode(rawCode);
       if(!code){if(clean(rawCode))issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code ignored: ${clean(rawCode)}`});continue}
-      rawRows.push({material_code:code,store_qty:asNum(pick(row,h.map,'store_qty')),pr_qty:asNum(pick(row,h.map,'pr_qty')),po_qty:asNum(pick(row,h.map,'po_qty')),vendor:type==='open_po'?vendorName(pick(row,h.map,'vendor')):(clean(pick(row,h.map,'vendor'))||null),sap_location_code:clean(pick(row,h.map,'sap_location_code'))||null,source_sheet:sheetName,source_row:i+1});
+      rawRows.push({material_code:code,store_qty:asNum(pick(row,h.map,'store_qty')),pr_qty:asNum(pick(row,h.map,'pr_qty')),po_qty:asNum(pick(row,h.map,'po_qty')),vendor:type==='open_po'?vendorName(pick(row,h.map,'vendor')):(vendorName(pick(row,h.map,'vendor'))||null),sap_location_code:clean(pick(row,h.map,'sap_location_code'))||null,source_sheet:sheetName,source_row:i+1});
     }
   }
   return {rawRows,issues,sheetDiagnostics};
