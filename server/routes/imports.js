@@ -31,6 +31,9 @@ function findSafeCandidate(code,materials){
   return null;
 }
 function same(a,b){if(a===null||a===undefined||a==='')return b===null||b===undefined||b==='';if(typeof a==='number'||typeof b==='number')return Number(a)===Number(b);return String(a)===String(b)}
+function masterSame(current,row){return ['spare_name','description','part_number','uom','manufacturer','vendor'].every(k=>row[k]===null||row[k]===''||same(current?.[k],row[k]))}
+function usageSame(current,row){if(!current)return false;return (row.required_qty===null||same(current.required_qty,row.required_qty))&&(row.discipline===null||row.discipline===''||same(current.discipline,row.discipline))&&(row.notes===null||row.notes===''||same(current.notes,row.notes))}
+function locationMatches(cur,row){if(!cur)return false;const area=String(cur.area_name||'');const eq=String(cur.equipment_name||'');const sub=String(cur.sub_equipment_name||'');return area===row.area&&((eq===row.equipment&&sub===String(row.sub_equipment||''))||(eq===String(row.sub_equipment||'')&&!sub));}
 
 r.post('/import/master/preview',auth,allow('planner','admin'),upload.single('file'),async(req,res)=>{
   if(!req.file)return res.status(400).json({error:'Excel file required'});
@@ -38,9 +41,21 @@ r.post('/import/master/preview',auth,allow('planner','admin'),upload.single('fil
   if(!area)return res.status(400).json({error:'Select an Area before importing a spare master'});
   const out=parseMasterExcel(req.file.buffer,area,department_code,discipline),seen=new Set(),dups=[];
   out.materials.forEach(m=>{const k=`${m.material_code||m.spare_name}|${department_code}|${m.area}|${m.equipment||''}|${m.sub_equipment||''}`;if(seen.has(k))dups.push(k);seen.add(k)});
+  const existing=(await q(`SELECT m.*,u.required_qty,u.discipline,u.notes,l.area_name,l.equipment_name,l.sub_equipment_name FROM materials m LEFT JOIN material_usages u ON u.material_id=m.id AND u.active=true LEFT JOIN locations l ON l.id=u.location_id AND l.department_code=$1 WHERE m.active=true`,[department_code])).rows;
+  const byCode=new Map();for(const e of existing){const c=String(e.material_code||'').toUpperCase();if(c&&!byCode.has(c))byCode.set(c,e)}
+  let newRows=0,changedRows=0,unchangedRows=0,noCodeRows=0;
+  const classifications=[];
+  for(const row of out.materials){
+    if(!row.material_code){noCodeRows++;classifications.push({material_code:null,spare_name:row.spare_name,status:'NO CODE',sheet:row.source_sheet});continue}
+    const master=byCode.get(row.material_code);
+    if(!master){newRows++;classifications.push({material_code:row.material_code,spare_name:row.spare_name,status:'NEW',sheet:row.source_sheet});continue}
+    const candidates=existing.filter(e=>e.id===master.id&&locationMatches(e,row));const usage=candidates[0];
+    if(masterSame(master,row)&&usageSame(usage,row)){unchangedRows++;classifications.push({material_code:row.material_code,spare_name:row.spare_name,status:'UNCHANGED',sheet:row.source_sheet})}
+    else{changedRows++;classifications.push({material_code:row.material_code,spare_name:row.spare_name,status:'CHANGED',sheet:row.source_sheet})}
+  }
   const unmapped=[...new Set(out.materials.filter(x=>!x.sap_location_code).map(x=>`${x.area} → ${x.equipment||'(Area level)'}${x.sub_equipment?' → '+x.sub_equipment:''}`))];
   const disciplineCounts=out.materials.reduce((a,x)=>{const d=x.discipline||'(Blank)';a[d]=(a[d]||0)+1;return a},{});
-  res.json({fileName:req.file.originalname,totalRows:out.materials.length,materials:out.materials.slice(0,100),issues:out.issues,duplicateUsages:dups.slice(0,50),unmappedLocations:unmapped,disciplineCounts,message:'Preview only. Material Code must be exactly 3 letters + 12 digits.'});
+  res.json({fileName:req.file.originalname,totalRows:out.materials.length,newRows,changedRows,unchangedRows,noCodeRows,materials:out.materials.slice(0,100),classifications:classifications.slice(0,150),issues:out.issues,duplicateUsages:dups.slice(0,50),unmappedLocations:unmapped,disciplineCounts,message:`Preview only: ${newRows} new, ${changedRows} changed, ${unchangedRows} unchanged, ${noCodeRows} without SAP Material Code.`});
 });
 
 r.post('/import/master/confirm',auth,allow('planner','admin'),upload.single('file'),async(req,res)=>{
@@ -48,17 +63,28 @@ r.post('/import/master/confirm',auth,allow('planner','admin'),upload.single('fil
   const {department_code,area,discipline}=await scope(req);
   if(!area)return res.status(400).json({error:'Select an Area before importing a spare master'});
   const out=parseMasterExcel(req.file.buffer,area,department_code,discipline);
-  let added=0,updated=0,skipped=0;
+  let added=0,updated=0,unchanged=0,skipped=0;
   for(const row of out.materials){
     const x={...row,department_code};
-    let m=x.material_code?(await q('SELECT * FROM materials WHERE upper(material_code)=upper($1)',[x.material_code])).rows[0]:null;
-    if(!m){m=(await q(`INSERT INTO materials(material_code,spare_name,description,part_number,uom,manufacturer,vendor,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8) RETURNING *`,[x.material_code,x.spare_name,x.description,x.part_number,x.uom,x.manufacturer,x.vendor,req.user.id])).rows[0];added++}
-    else{const merged={...m};for(const k of ['spare_name','description','part_number','uom','manufacturer','vendor'])if(x[k]!==null&&x[k]!=='')merged[k]=x[k];m=(await q(`UPDATE materials SET spare_name=$1,description=$2,part_number=$3,uom=$4,manufacturer=$5,vendor=$6,active=true,updated_by=$7,updated_at=NOW() WHERE id=$8 RETURNING *`,[merged.spare_name,merged.description,merged.part_number,merged.uom,merged.manufacturer,merged.vendor,req.user.id,m.id])).rows[0];updated++}
     const loc=await findOrCreateLocation(x);
-    await q(`INSERT INTO material_usages(material_id,location_id,required_qty,discipline,notes,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$6,$6) ON CONFLICT(material_id,location_id) DO UPDATE SET required_qty=COALESCE(EXCLUDED.required_qty,material_usages.required_qty),discipline=COALESCE(EXCLUDED.discipline,material_usages.discipline),notes=COALESCE(NULLIF(EXCLUDED.notes,''),material_usages.notes),active=true,updated_by=$6,updated_at=NOW()`,[m.id,loc.id,x.required_qty,x.discipline,x.notes,req.user.id]);
+    let m=x.material_code?(await q('SELECT * FROM materials WHERE upper(material_code)=upper($1)',[x.material_code])).rows[0]:null;
+    if(!m&&!x.material_code&&(x.spare_name||x.description)){
+      m=(await q(`SELECT m.* FROM materials m JOIN material_usages u ON u.material_id=m.id WHERE u.location_id=$1 AND u.active=true AND m.active=true AND lower(COALESCE(m.spare_name,''))=lower($2) AND lower(COALESCE(m.description,''))=lower($3) ORDER BY m.id LIMIT 1`,[loc.id,x.spare_name||'',x.description||''])).rows[0]||null;
+    }
+    let materialChanged=false;
+    if(!m){m=(await q(`INSERT INTO materials(material_code,spare_name,description,part_number,uom,manufacturer,vendor,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8) RETURNING *`,[x.material_code,x.spare_name,x.description,x.part_number,x.uom,x.manufacturer,x.vendor,req.user.id])).rows[0];added++;materialChanged=true}
+    else{
+      const merged={...m};for(const k of ['spare_name','description','part_number','uom','manufacturer','vendor'])if(x[k]!==null&&x[k]!=='')merged[k]=x[k];
+      materialChanged=!['spare_name','description','part_number','uom','manufacturer','vendor'].every(k=>same(m[k],merged[k]));
+      if(materialChanged)m=(await q(`UPDATE materials SET spare_name=$1,description=$2,part_number=$3,uom=$4,manufacturer=$5,vendor=$6,active=true,updated_by=$7,updated_at=NOW() WHERE id=$8 RETURNING *`,[merged.spare_name,merged.description,merged.part_number,merged.uom,merged.manufacturer,merged.vendor,req.user.id,m.id])).rows[0];
+    }
+    const oldUsage=(await q('SELECT * FROM material_usages WHERE material_id=$1 AND location_id=$2',[m.id,loc.id])).rows[0];
+    const usageChanged=!usageSame(oldUsage,x)||!oldUsage?.active;
+    if(usageChanged)await q(`INSERT INTO material_usages(material_id,location_id,required_qty,discipline,notes,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$6,$6) ON CONFLICT(material_id,location_id) DO UPDATE SET required_qty=COALESCE(EXCLUDED.required_qty,material_usages.required_qty),discipline=COALESCE(EXCLUDED.discipline,material_usages.discipline),notes=COALESCE(NULLIF(EXCLUDED.notes,''),material_usages.notes),active=true,updated_by=$6,updated_at=NOW()`,[m.id,loc.id,x.required_qty,x.discipline,x.notes,req.user.id]);
+    if(!materialChanged&&!usageChanged&&oldUsage)unchanged++;else if(!materialChanged&&usageChanged&&m)updated++;else if(materialChanged&&m&&added===0)updated++;
   }
-  await q(`INSERT INTO import_history(import_type,file_name,total_rows,added_rows,updated_rows,skipped_rows,issue_rows,details,imported_by) VALUES('master',$1,$2,$3,$4,$5,$6,$7,$8)`,[req.file.originalname,out.materials.length,added,updated,skipped,out.issues.length,JSON.stringify({department_code,area,discipline,issues:out.issues}),req.user.id]);
-  res.json({ok:true,total:out.materials.length,added,updated,skipped,issues:out.issues});
+  await q(`INSERT INTO import_history(import_type,file_name,total_rows,added_rows,updated_rows,skipped_rows,issue_rows,details,imported_by) VALUES('master',$1,$2,$3,$4,$5,$6,$7,$8)`,[req.file.originalname,out.materials.length,added,updated,skipped,out.issues.length,JSON.stringify({department_code,area,discipline,unchanged,issues:out.issues}),req.user.id]);
+  res.json({ok:true,total:out.materials.length,added,updated,unchanged,skipped,issues:out.issues});
 });
 
 r.post('/import/sap/preview',auth,allow('planner','admin'),upload.single('file'),async(req,res)=>{
