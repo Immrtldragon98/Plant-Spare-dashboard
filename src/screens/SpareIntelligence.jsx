@@ -1,0 +1,21 @@
+import React,{useEffect,useMemo,useState} from 'react';
+import {request} from '../api/client.js';
+
+const Card=({n,t})=><div className="card"><strong>{n??0}</strong><span>{t}</span></div>;
+
+export default function SpareIntelligence({filters,options,setNotice}){
+  const[status,setStatus]=useState('pr_eligible'),[search,setSearch]=useState(''),[data,setData]=useState({rows:[],summary:{}}),[busy,setBusy]=useState(false),[reviews,setReviews]=useState([]),[aiNote,setAiNote]=useState('');
+  const qs=useMemo(()=>new URLSearchParams({department_code:filters.department_code||'',area:filters.area||'',discipline:filters.discipline||'',status,search}),[filters.department_code,filters.area,filters.discipline,status,search]);
+  useEffect(()=>{if(!filters.department_code)return;request('/spare-intelligence?'+qs).then(x=>{setData(x);setReviews([]);setAiNote('')}).catch(e=>setNotice(e.message))},[String(qs)]);
+  const review=async()=>{const items=(data.rows||[]).slice(0,25);if(!items.length)return;setBusy(true);try{const x=await request('/spare-intelligence/review',{method:'POST',body:JSON.stringify({items})});setReviews(x.reviews||[]);setAiNote(x.note|| (x.aiEnabled?'AI review complete':'Rule-based review complete'))}catch(e){setNotice(e.message)}finally{setBusy(false)}};
+  const reviewMap=new Map((reviews||[]).map(x=>[x.material_code,x]));
+  return <>
+    <div className="pageTitle"><div><h1>Spare Intelligence</h1><p>Rules calculate shortage and PR eligibility. AI only ranks and explains the candidates; it cannot change SAP quantities.</p></div><button disabled={busy||!data.rows?.length} onClick={review}>{busy?'Reviewing...':'AI Review Top 25'}</button></div>
+    <div className="cards"><Card n={data.summary?.total} t="Materials screened"/><Card n={data.summary?.critical} t="Critical spares"/><Card n={data.summary?.pr_eligible} t="PR eligible"/><Card n={data.summary?.covered} t="Covered by stock/PR/PO"/></div>
+    <div className="filterSection"><strong>Status</strong><div className="chipRow">{[['all','All'],['critical','Critical'],['pr_eligible','PR Eligible'],['covered','Covered']].map(([k,l])=><button key={k} className={status===k?'chip activeChip':'chip'} onClick={()=>setStatus(k)}>{l}</button>)}</div></div>
+    <div className="intelligenceFilters"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search Material Code, spare, vendor..."/><select value={filters.area||''} disabled><option>{filters.area||'All Areas'}</option></select><select value={filters.discipline||''} disabled><option>{filters.discipline||'All Disciplines'}</option></select></div>
+    {aiNote&&<div className="hierarchyBanner"><strong>{aiNote}</strong></div>}
+    <div className="tableWrap"><table><thead><tr><th>Risk</th><th>Material Code</th><th>Spare Name</th><th>Required</th><th>Store</th><th>PR</th><th>PO</th><th>Pipeline</th><th>Gap / Ideal PR</th><th>Locations</th><th>Status</th><th>Review</th></tr></thead><tbody>{(data.rows||[]).map(x=>{const r=reviewMap.get(x.material_code);return <tr key={x.material_code}><td><span className={Number(x.risk_score)>=80?'riskBadge highRisk':Number(x.risk_score)>=50?'riskBadge mediumRisk':'riskBadge'}>{x.risk_score}</span></td><td className="code">{x.material_code}</td><td><strong>{x.spare_name||'—'}</strong><small className="muted block">{x.description||''}</small></td><td>{x.required_qty??0}</td><td>{x.store_qty??0}</td><td>{x.pr_qty??0}</td><td>{x.po_qty??0}</td><td>{x.pipeline_qty??0}</td><td><strong>{x.ideal_pr_qty??0}</strong></td><td><span>{x.usage_count} use(s)</span><small className="muted block">{x.locations||'—'}</small></td><td>{x.pr_eligible?<span className="statusPill dangerPill">PR Eligible</span>:x.critical?<span className="statusPill warnPill">Critical</span>:<span className="statusPill okPill">Covered</span>}</td><td>{r?<><strong>{r.classification}</strong><small className="muted block">{r.reason}</small></>:<small>{x.rule_explanation}</small>}</td></tr>})}</tbody></table></div>
+    <p className="muted">Current V1 intelligence uses required quantity, stock, PR and PO. Consumption trend, last issue, lead time, price and vendor performance will enrich this same screen as those histories become available.</p>
+  </>;
+}
