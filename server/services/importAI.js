@@ -15,16 +15,31 @@ function workbookSummary(buffer){
 
 const canonical={
   material_code:['material','material code','material no','material number','matnr','code'],
+  alternate_material_code:['alternate mat code','alternate mat. code','alternate material code','alternate code'],
   spare_name:['spare name','item name','part name','short text'],
   description:['description','material description','material desc','short description','item description'],
+  tracking_id:['tracking id','tracking no','tracking number'],
+  uom:['uom','unit','base unit of measure','order unit'],
   qty:['quantity','qty','open quantity','open qty'],
+  safety_stock:['safety stock to maintain','safety stock','minimum stock','min stock'],
+  stock_p1:['stock in p1','p1 stock'],
+  stock_p2:['stock in p2','p2 stock'],
+  total_stock:['total stock','available total stock'],
+  consumption_p2:['consumption p2','consumption (p2)','p2 consumption'],
+  last_issue_date:['last issue date','last issued date','last consumption date'],
+  ideal_pr_qty:['ideal pr qty for p2','ideal pr qty','recommended pr qty'],
   vendor_name:['name of supplier','supplier name','vendor name','supplier','vendor'],
   vendor_code:['vendor code','supplier code','vendor no','supplier no'],
   po_number:['purchasing document','po number','purchase order','po no'],
   pr_number:['purchase requisition','pr number','pr no'],
   po_raised_date:['po raised date','document date','po date','created on'],
   pr_raised_date:['pr raised date','pr date','requisition date'],
-  rate:['rate','net price','unit price','price'],
+  rate:['rate','net price','unit price','price','unit price '],
+  allowed_qty:['allowed qty by subhendu','allowed qty','approved qty'],
+  total_price:['total price','total value'],
+  lead_time_years:['delivery lead time years','delivery lead time (years)','lead time years','lead time'],
+  consumption_plan_months:['consumption plan months','consumption plan (months)','plan months'],
+  justification:['justification','reason','remarks'],
   expected_date:['expected date','delivery date','expected delivery','expected return','expected return date'],
   out_date:['out date','outward date','gate out date'],
   in_date:['in date','return date','actual return','actual return date'],
@@ -51,7 +66,8 @@ function guessMappings(summary){
 function localGuess(summary){
   const text=summary.sheets.flatMap(s=>s.rows.flat()).map(norm).join(' | ');
   let fileType='master';
-  if(text.includes('nrgp')||text.includes('non returnable gate pass')||text.includes('non returnable'))fileType='nrgp';
+  if(text.includes('safety stock to maintain')&&text.includes('ideal pr qty'))fileType='pr_planning';
+  else if(text.includes('nrgp')||text.includes('non returnable gate pass')||text.includes('non returnable'))fileType='nrgp';
   else if(text.includes('rgp')||text.includes('returnable gate pass')||text.includes('expected return')||text.includes('outward date'))fileType='rgp';
   else if(text.includes('still to be delivered')||text.includes('purchasing document'))fileType='open_po';
   else if(text.includes('order quantity')||text.includes('purchase requisition')&&(text.includes('open pr')||text.includes('requisition quantity')||text.includes('remaining quantity')))fileType='open_pr';
@@ -68,7 +84,7 @@ export async function analyzeImport(buffer){
   const summary=workbookSummary(buffer),fallback=localGuess(summary);
   const base=(process.env.AI_IMPORT_BASE_URL||'').replace(/\/$/,''),key=process.env.AI_IMPORT_API_KEY||'',model=process.env.AI_IMPORT_MODEL||'';
   if(!base||!key||!model)return {aiEnabled:false,analysis:fallback,summary};
-  const prompt=`You analyze plant spare/procurement Excel layouts. Return JSON only. Determine fileType from: master, stock, open_pr, open_po, rgp, nrgp. Business rule for this app: Order Quantity maps to PR Qty; Still to be delivered (qty) maps to PO Qty. Propose column mappings using only columns actually visible. Allowed mapping keys: material_code, spare_name, description, qty, vendor_code, vendor_name, pr_number, po_number, pr_raised_date, po_raised_date, rate, expected_date, out_date, in_date, store_qty, pr_qty, po_qty, plant, sap_location_code. Material Code values must match exactly 3 uppercase letters followed by 12 digits; never infer or invent a code. Do not modify data. Include confidence 0..1 and warnings. Workbook sample: ${JSON.stringify(summary)}`;
+  const prompt=`You analyze plant spare/procurement Excel layouts. Return JSON only. Determine fileType from: master, stock, open_pr, open_po, rgp, nrgp, pr_planning. Business rule for this app: Order Quantity maps to PR Qty; Still to be delivered (qty) maps to PO Qty. A PR planning sheet may contain Safety Stock to Maintain, Total Stock, Consumption, Last Issue Date, Ideal PR Qty, current PR Qty, Unit Price, Lead Time, Consumption Plan and Justification. Propose column mappings using only columns actually visible. Allowed mapping keys: ${Object.keys(canonical).join(', ')}, plant, sap_location_code. Material Code values must match exactly 3 uppercase letters followed by 12 digits; never infer or invent a code. Do not modify data. Include confidence 0..1 and warnings. Workbook sample: ${JSON.stringify(summary)}`;
   try{
     const resp=await fetch(`${base}/chat/completions`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages:[{role:'system',content:'You are a cautious schema-mapping assistant for industrial SAP/Excel data. Never invent data.'},{role:'user',content:prompt}],temperature:0.1,response_format:{type:'json_object'}})});
     if(!resp.ok)throw new Error(`AI provider returned ${resp.status}`);
