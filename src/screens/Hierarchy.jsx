@@ -31,8 +31,8 @@ function HierarchyModal({item,departments,onClose,onSaved,setNotice}){
       <label>Sub-department Code<select value={x.department_code||''} onChange={e=>{const code=e.target.value;const d=(departments||[]).find(v=>v.department_code===code);setX({...x,department_code:code,department_name:d?.department_name||x.department_name})}}>{(departments||[]).map(d=><option value={d.department_code} key={d.department_code}>{d.department_code}</option>)}</select></label>
       {field('equipment_name','Equipment','WRM / ICM / PFA / Utility')}
       {field('equipment_code','Equipment Code','3102_CH2_WRM')}
-      {field('sub_equipment_name','Sub-equipment','Finishing Mill')}
-      {field('sub_equipment_code','Sub-equipment Code','3102_CH2_WRM_FM')}
+      {field('sub_equipment_name','Sub-equipment','Enter sub-equipment')}
+      {field('sub_equipment_code','Sub-equipment Code','Enter SAP sub-equipment code')}
     </div>
     <div className="actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button>Save</button></div>
   </form></div>;
