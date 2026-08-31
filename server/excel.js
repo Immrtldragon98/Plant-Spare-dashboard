@@ -30,10 +30,10 @@ export function extractLegacyMaterialCode(v){
 const noteRow=v=>/^(MAINTENANCE|MAINTANCE|SPARE|PLANNING)\s*NOTE$/i.test(clean(v))||/^\d+\.\s+/.test(clean(v));
 
 const aliases={
-  material_code:['material code','material','material number','material no','material no.','material id','mat code','mat no','mat no.','matnr','new code','materialcode'],
-  spare_name:['spare name','part name','item name','spare','name'],
+  material_code:['material code','material','material number','material no','material no.','material id','mat code','mat no','mat no.','matnr','new code','materialcode','code'],
+  spare_name:['spare name','part name','part name sparename','part name spare name','item name','item','spare','name'],
   description:['description','material description','material desc','short description','short text','item description'],
-  part_number:['part number','part no','part no.','item part no','item- part no','item part number','pn'],
+  part_number:['part number','part no','part no.','p art number','item part no','item- part no','item part number','pn'],
   required_qty:['tiq','qty','quantity','inst quantity','installed quantity','per line','required qty','safety stock to maintain'],
   discipline:['discipline','trade','category'],
   vendor:['vendor','vendor name','supplier name','name of supplier','supplier','suppl','lifnr'],
@@ -64,6 +64,27 @@ function findHeader(rows,maxRows=80){
   return best;
 }
 function pick(row,map,key){return map[key]===undefined?null:row[map[key]]}
+function headerIndex(headerRow,...names){const wanted=names.map(norm);return headerRow.findIndex(h=>wanted.includes(norm(h)))}
+
+function masterSemanticMap(rows,h){
+  const headerRow=rows[h.i]||[],map={...h.map};
+  const item=headerIndex(headerRow,'item');
+  const partName=headerIndex(headerRow,'part name','part name/sparename','part name spare name','spare name');
+  const shortText=headerIndex(headerRow,'short text');
+  const description=headerIndex(headerRow,'description');
+  const shortDescription=headerIndex(headerRow,'short description');
+  const installed=headerIndex(headerRow,'inst quantity','installed quantity');
+  const tiq=headerIndex(headerRow,'tiq');
+  const qty=headerIndex(headerRow,'qty','quantity');
+
+  if(item>=0)map.spare_name=item;
+  if(partName>=0)map.spare_name=partName;
+  if(shortText>=0&&description>=0){map.spare_name=description;map.description=shortText}
+  else if(description>=0&&shortDescription>=0){map.spare_name=description;map.description=shortDescription}
+  else if(map.spare_name===undefined&&description>=0){map.spare_name=description;if(shortText>=0)map.description=shortText;else if(shortDescription>=0)map.description=shortDescription}
+  if(installed>=0)map.required_qty=installed;else if(tiq>=0)map.required_qty=tiq;else if(qty>=0)map.required_qty=qty;
+  return map;
+}
 
 const equipMap={
  'flap assembly':{equipment:'Coiler',sub_equipment:'Flap Assembly'},
@@ -91,14 +112,16 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:null,raw:false});
     const h=findHeader(rows);
     if(h.map.material_code===undefined){issues.push({sheet:sheetName,reason:'No Material Code column recognized',headers:h.headers});continue}
+    const map=masterSemanticMap(rows,h);
     const detected=sheetLocation(sheetName);
     const subEquipment=detected.sub_equipment||detected.equipment||clean(sheetName);
     for(let i=h.i+1;i<rows.length;i++){
       const row=rows[i];
-      const rawCode=clean(pick(row,h.map,'material_code'));
+      const rawCode=clean(pick(row,map,'material_code'));
       let code=canonicalMaterialCode(rawCode);
-      let spareName=clean(pick(row,h.map,'spare_name'))||null;
-      let description=clean(pick(row,h.map,'description'))||null;
+      let spareName=clean(pick(row,map,'spare_name'))||null;
+      let description=clean(pick(row,map,'description'))||null;
+      if(spareName&&description&&spareName===description)description=null;
       const descCode=canonicalMaterialCode(description);
       if(!code&&descCode&&clean(description).toUpperCase()===descCode){
         code=descCode;spareName=spareName||rawCode||null;description=null;
@@ -107,7 +130,9 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
       if(!code&&rawCode&&!spareName&&!noteRow(rawCode))spareName=rawCode;
       if(!code&&!spareName&&!description)continue;
       if(!code&&noteRow(rawCode)&&!description)continue;
-      materials.push({material_code:code,spare_name:spareName,description,part_number:clean(pick(row,h.map,'part_number'))||null,required_qty:asNum(pick(row,h.map,'required_qty')),discipline:clean(pick(row,h.map,'discipline'))||defaultDiscipline||null,uom:clean(pick(row,h.map,'uom'))||null,vendor:vendorName(pick(row,h.map,'vendor')),manufacturer:clean(pick(row,h.map,'manufacturer'))||null,notes:clean(pick(row,h.map,'notes'))||null,area,equipment:area,sub_equipment:subEquipment,sap_location_code:clean(pick(row,h.map,'sap_location_code'))||null,source_sheet:sheetName,source_row:i+1});
+      const manufacturer=clean(pick(row,map,'manufacturer'))||null;
+      const vendor=vendorName(pick(row,map,'vendor'))||vendorName(manufacturer);
+      materials.push({material_code:code,spare_name:spareName,description,part_number:clean(pick(row,map,'part_number'))||null,required_qty:asNum(pick(row,map,'required_qty')),discipline:clean(pick(row,map,'discipline'))||defaultDiscipline||null,uom:clean(pick(row,map,'uom'))||null,vendor,manufacturer,notes:clean(pick(row,map,'notes'))||null,area,equipment:area,sub_equipment:subEquipment,sap_location_code:clean(pick(row,map,'sap_location_code'))||null,source_sheet:sheetName,source_row:i+1});
       if(rawCode&&!code)issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code kept out of Material Code: ${rawCode}`});
     }
   }
