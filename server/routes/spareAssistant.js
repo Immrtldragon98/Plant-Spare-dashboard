@@ -5,7 +5,7 @@ import {auth} from '../auth.js';
 const r=Router();
 const codeFrom=v=>String(v||'').toUpperCase().match(/[A-Z]{3}\d{12}/)?.[0]||null;
 
-function fallbackAnswer(rows,question){
+function fallbackAnswer(rows){
   if(!rows.length)return 'I could not find a matching spare in the current dashboard data. Try a Material Code or spare name.';
   const top=rows.slice(0,8);
   const lines=top.map(x=>{
@@ -38,11 +38,11 @@ r.post('/spare-assistant/ask',auth,async(req,res)=>{
     LIMIT ${code?5:40}`;
   let rows=(await q(sql,p)).rows;
   if(wantsPr)rows=rows.filter(x=>Number(x.required_qty||0)>(Number(x.store_qty||0)+Number(x.pr_qty||0)+Number(x.po_qty||0)));
-  const fallback=fallbackAnswer(rows,question);
-  const base=(process.env.AI_IMPORT_BASE_URL||'').replace(/\/$/,''),key=process.env.AI_IMPORT_API_KEY||'',model=process.env.AI_IMPORT_MODEL||'';
+  const fallback=fallbackAnswer(rows);
+  const base=(process.env.AI_BASE_URL||process.env.AI_IMPORT_BASE_URL||'').replace(/\/$/,''),key=process.env.AI_API_KEY||process.env.AI_IMPORT_API_KEY||'',model=process.env.AI_MODEL||process.env.AI_IMPORT_MODEL||'';
   if(!base||!key||!model)return res.json({aiEnabled:false,answer:fallback,materials:rows.slice(0,12),note:'AI provider is not configured; answer generated from dashboard rules and data.'});
   const facts=rows.slice(0,20).map(x=>({...x,uncovered_gap:Math.max(Number(x.required_qty||0)-(Number(x.store_qty||0)+Number(x.pr_qty||0)+Number(x.po_qty||0)),0)}));
-  const prompt=`You are an in-app industrial Spare Assistant for planners. Answer ONLY from the supplied spare facts. Do not invent nameplate values, consumption history, failure history, lead time, prices, vendor performance or specifications unless explicitly present. Backend quantities are authoritative. If asked for procurement justification, draft a concise planner justification using current stock, required quantity, open PR/PO, uncovered gap, usage locations and known description only. If data is insufficient, say what is missing. User question: ${question}\nFacts: ${JSON.stringify(facts)}`;
+  const prompt=`You are an in-app industrial Spare Assistant for maintenance and spare planners. Answer ONLY from supplied spare facts. Backend quantities are authoritative. Never invent nameplate values, consumption history, failure history, lead time, prices, vendor performance or specifications unless explicitly present. If asked for procurement justification, draft a concise planner justification using current stock, required quantity, open PR/PO, uncovered gap, usage locations and known description only. If data is insufficient, state exactly which evidence is missing. User question: ${question}\nFacts: ${JSON.stringify(facts)}`;
   try{
     const resp=await fetch(`${base}/chat/completions`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages:[{role:'system',content:'You are a cautious industrial spare-planning copilot grounded only in supplied plant data.'},{role:'user',content:prompt}],temperature:0.15})});
     if(!resp.ok)throw new Error(`AI provider returned ${resp.status}`);
