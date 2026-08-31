@@ -17,8 +17,12 @@ const canonical={
   plant:['plant'],
   material_code:['material','material code','material no','material number','matnr','code'],
   alternate_material_code:['alternate mat code','alternate mat. code','alternate material code','alternate code','old code'],
-  spare_name:['spare name','item name','part name','short text','material short text'],
+  spare_name:['spare name','item name','item','part name','part name sparename','part name spare name','short text','material short text'],
   description:['description','material description','material desc','short description','item description'],
+  part_number:['part number','part no','p art number','part no.'],
+  required_qty:['tiq','required qty','required quantity','qty','inst quantity'],
+  assembly_name:['assembly name','assembly'],
+  notes:['notes','note','remarks'],
   tracking_id:['tracking id','tracking no','tracking number','pr tracking no'],
   pr_number:['purchase requisition','purchase req','purchase req.','pr number','pr no'],
   pr_item:['requisn item','requisition item','pr item'],
@@ -42,7 +46,7 @@ const canonical={
   consumption_text:['consumption text'],
   last_issue_date:['last issue date','last issued date','last consumption date'],
   ideal_pr_qty:['ideal pr qty for p2','ideal pr qty','recommended pr qty'],
-  vendor_name:['name of supplier','supplier name','vendor name','supplier','vendor'],
+  vendor_name:['name of supplier','supplier name','vendor name','supplier','vendor','manufacturer'],
   vendor_code:['vendor code','supplier code','vendor no','supplier no'],
   po_number:['purchasing document','po number','purchase order','po no'],
   po_raised_date:['po raised date','document date','po date','created on'],
@@ -68,6 +72,46 @@ const canonical={
   in_date:['in date','return date','actual return','actual return date']
 };
 
+function masterSemanticOverrides(summary,mappings){
+  const out={...mappings};
+  for(const sheet of summary.sheets){
+    const headerRows=sheet.rows.slice(0,5);
+    for(const row of headerRows){
+      const headers=row.filter(Boolean),byNorm=new Map(headers.map(h=>[norm(h),h]));
+      const has=k=>byNorm.has(k),get=k=>byNorm.get(k);
+
+      // Common master format: MATERIAL CODE | ITEM | PART NUMBER | MANUFACTURER | TIQ
+      if(has('item')&&has('manufacturer')&&has('tiq')){
+        out.spare_name=get('item');
+        out.vendor_name=get('manufacturer');
+        out.required_qty=get('tiq');
+      }
+
+      // Common master format: Material code | Part no. | Qty | Part name/sparename
+      if(has('part name sparename')||has('part name spare name')){
+        out.spare_name=get('part name sparename')||get('part name spare name');
+        if(has('qty'))out.required_qty=get('qty');
+      }
+
+      // In this workbook family Description is the actual spare name when Short Text + Assembly Name coexist.
+      if(has('short text')&&has('description')&&has('assembly name')){
+        out.spare_name=get('description');
+        out.description=get('short text');
+        out.assembly_name=get('assembly name');
+        if(has('tiq'))out.required_qty=get('tiq');
+      }
+
+      // Common master format: CODE | part number | DESCRIPTION | INST QUANTITY | Short DESCRIPTION
+      if(has('description')&&has('inst quantity')&&has('short description')){
+        out.spare_name=get('description');
+        out.description=get('short description');
+        out.required_qty=get('inst quantity');
+      }
+    }
+  }
+  return out;
+}
+
 function guessMappings(summary){
   const headers=[];
   for(const s of summary.sheets){
@@ -87,7 +131,7 @@ function guessMappings(summary){
     if(n==='open pr')mappings.pr_qty=h;
     if(n==='open po')mappings.po_qty=h;
   }
-  return mappings;
+  return masterSemanticOverrides(summary,mappings);
 }
 
 function localGuess(summary){
@@ -114,9 +158,9 @@ export async function analyzeImport(buffer){
   const summary=workbookSummary(buffer),fallback=localGuess(summary);
   const base=(process.env.AI_IMPORT_BASE_URL||'').replace(/\/$/,''),key=process.env.AI_IMPORT_API_KEY||'',model=process.env.AI_IMPORT_MODEL||'';
   if(!base||!key||!model)return {aiEnabled:false,analysis:fallback,summary};
-  const prompt=`You analyze plant spare/procurement Excel layouts. Return JSON only. Determine fileType from: master, stock, open_pr, open_po, rgp, nrgp, pr_planning. Business rules for this app: Order Quantity maps to Open PR Qty for the standard Open PR export. In planning sheets, PR Quantity is a planned/requested PR quantity and MUST NOT overwrite Open PR. Open PR maps to pr_qty, Open PO maps to po_qty, and Unrestricted maps to store_qty. A PR/FY planning or repair-intelligence sheet may contain PR Tracking No, Purchase Req., Requisn Item, Old code, Material No, Material Short Text, Unit, Justification for Procurement, Equipment Description, PR Quantity, Delivery QTY Lot 1/2, OEM recommended life, Root Cause for failure, Installed Qty., CMP Remarks, NEW VED, Unrestricted, Price, Total, VED, Lead Time, Open PR, Open PO, Consumption Text, Additional Details, Safety Stock, Indigenous/Imported, Cons 2024/2025/2026, and Local & Repair. Propose column mappings using only columns actually visible. Allowed mapping keys: ${Object.keys(canonical).join(', ')}, sap_location_code. Material Code values must match exactly 3 uppercase letters followed by 12 digits; never infer or invent a code. Never merge planned_pr_qty with open PR quantity. Do not modify data. Include confidence 0..1 and warnings. Workbook sample: ${JSON.stringify(summary)}`;
+  const prompt=`You analyze plant spare/procurement Excel layouts. Return JSON only. Determine fileType from: master, stock, open_pr, open_po, rgp, nrgp, pr_planning. Use the complete header set AND sample cell values to infer business meaning; do not map only from one header word. Master-list conventions used by this plant: ITEM is normally the Spare Name unless sample values are clearly long specification/description text. MANUFACTURER is treated as the Vendor/source for this dashboard. Part name/sparename is Spare Name. TIQ and INST QUANTITY are Required Qty for master lists. Assembly Name is hierarchy/context, never Spare Name. For sheets containing Short Text + Description + Assembly Name, Description is the Spare Name and Short Text is the secondary description. For sheets containing DESCRIPTION + Short DESCRIPTION + INST QUANTITY, DESCRIPTION is Spare Name and Short DESCRIPTION is Description. Part No./P ART NUMBER is Part Number. Material Code/CODE must only map to material_code when values pass the strict SAP code rule. Business rules for procurement: Order Quantity maps to Open PR Qty for the standard Open PR export. In planning sheets, PR Quantity is a planned/requested PR quantity and MUST NOT overwrite Open PR. Open PR maps to pr_qty, Open PO maps to po_qty, and Unrestricted maps to store_qty. A PR/FY planning or repair-intelligence sheet may contain PR Tracking No, Purchase Req., Requisn Item, Old code, Material No, Material Short Text, Unit, Justification for Procurement, Equipment Description, PR Quantity, Delivery QTY Lot 1/2, OEM recommended life, Root Cause for failure, Installed Qty., CMP Remarks, NEW VED, Unrestricted, Price, Total, VED, Lead Time, Open PR, Open PO, Consumption Text, Additional Details, Safety Stock, Indigenous/Imported, Cons 2024/2025/2026, and Local & Repair. Propose column mappings using only columns actually visible. Allowed mapping keys: ${Object.keys(canonical).join(', ')}, sap_location_code. Material Code values must match exactly 3 uppercase letters followed by 12 digits; never infer or invent a code. Never merge planned_pr_qty with open PR quantity. Do not modify data. Include confidence 0..1 and warnings. Workbook sample: ${JSON.stringify(summary)}`;
   try{
-    const resp=await fetch(`${base}/chat/completions`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages:[{role:'system',content:'You are a cautious schema-mapping assistant for industrial SAP/Excel data. Never invent data.'},{role:'user',content:prompt}],temperature:0.1,response_format:{type:'json_object'}})});
+    const resp=await fetch(`${base}/chat/completions`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages:[{role:'system',content:'You are a cautious schema-mapping assistant for industrial SAP/Excel data. Infer semantics from headers plus sample values. Never invent data.'},{role:'user',content:prompt}],temperature:0.1,response_format:{type:'json_object'}})});
     if(!resp.ok)throw new Error(`AI provider returned ${resp.status}`);
     const body=await resp.json(),content=body?.choices?.[0]?.message?.content,parsed=parseJson(content);
     if(!parsed)throw new Error('AI response was not valid JSON');
