@@ -6,10 +6,10 @@ const clean=v=>String(v??'').trim();
 const num=v=>{if(v===null||v===undefined||clean(v)==='')return null;const m=String(v).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0]):null};
 const date=v=>clean(v)||null;
 const norm=v=>clean(v).toLowerCase().replace(/[._\-/()]+/g,' ').replace(/\s+/g,' ');
+const validDisciplines=new Set(['Mechanical','Electrical','Instrumentation','Operation','Process','Common / Other']);
+const disciplineValue=v=>{const s=clean(v);if(!s)return null;const hit=[...validDisciplines].find(x=>x.toLowerCase()===s.toLowerCase());return hit||s};
 
-function rowObjects(sheet){
-  return XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:false});
-}
+function rowObjects(sheet){return XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:false})}
 
 function findHeaderIndex(rows,mapping={}){
   const wanted=new Set(Object.values(mapping||{}).map(norm).filter(Boolean));
@@ -22,19 +22,13 @@ function findHeaderIndex(rows,mapping={}){
   return best;
 }
 
-function columnIndex(headers,name){
-  const n=norm(name);if(!n)return -1;
-  return headers.findIndex(h=>norm(h)===n);
-}
+function columnIndex(headers,name){const n=norm(name);if(!n)return -1;return headers.findIndex(h=>norm(h)===n)}
+function read(row,headers,mapping,key){const idx=columnIndex(headers,mapping?.[key]);return idx<0?null:row[idx]}
 
-function read(row,headers,mapping,key){
-  const idx=columnIndex(headers,mapping?.[key]);
-  return idx<0?null:row[idx];
-}
-
-function canonicalRow(row,headers,mapping,sheetName,rowNumber,fileType){
+function canonicalRow(row,headers,mapping,sheetName,rowNumber,fileType,defaultDiscipline=''){
   const rawCode=read(row,headers,mapping,'material_code');
   const material_code=canonicalMaterialCode(rawCode);
+  const mappedDiscipline=disciplineValue(read(row,headers,mapping,'discipline'));
   const out={
     material_code,
     raw_material_code:clean(rawCode)||null,
@@ -43,6 +37,7 @@ function canonicalRow(row,headers,mapping,sheetName,rowNumber,fileType){
     description:clean(read(row,headers,mapping,'description'))||null,
     part_number:clean(read(row,headers,mapping,'part_number'))||null,
     uom:clean(read(row,headers,mapping,'uom'))||null,
+    discipline:mappedDiscipline||disciplineValue(defaultDiscipline)||null,
     required_qty:num(read(row,headers,mapping,'required_qty')),
     store_qty:num(read(row,headers,mapping,'store_qty')),
     pr_qty:num(read(row,headers,mapping,'pr_qty')),
@@ -90,42 +85,36 @@ function canonicalRow(row,headers,mapping,sheetName,rowNumber,fileType){
 }
 
 function localSheetMapping(sheetSummary){
-  const headers=sheetSummary.rows.flatMap(r=>r).map(clean).filter(Boolean);
-  const map={};
+  const headers=sheetSummary.rows.flatMap(r=>r).map(clean).filter(Boolean),map={};
   const aliases={
     material_code:['material code','material','material no','material no.','material number','code','new code'],
     spare_name:['spare name','item','part name','part name/sparename','material short text'],
     description:['description','short description','short text','material description'],
     part_number:['part number','part no','part no.','p art number'],
     required_qty:['tiq','qty','inst quantity','installed quantity','required qty'],
+    discipline:['discipline','trade','maintenance discipline','category'],
     vendor_name:['vendor','vendor name','supplier','name of supplier','manufacturer'],
     uom:['uom','unit'],store_qty:['unrestricted','total stock','store qty','stock'],pr_qty:['open pr','order quantity'],po_qty:['open po','still to be delivered (qty)','still to be delivered qty'],
     planned_pr_qty:['pr quantity'],safety_stock:['safety stock'],consumption_fy24:['cons 2024','fy24'],consumption_fy25:['cons 2025','fy25'],consumption_fy26:['cons 2026','fy26'],lead_time_years:['lead time'],justification:['justification for procurement','justification'],assembly_name:['assembly name']
   };
-  for(const[k,vals]of Object.entries(aliases)){
-    const h=headers.find(x=>vals.some(a=>norm(x)===norm(a)));if(h)map[k]=h;
-  }
+  for(const[k,vals]of Object.entries(aliases)){const h=headers.find(x=>vals.some(a=>norm(x)===norm(a)));if(h)map[k]=h}
   const has=x=>headers.find(h=>norm(h)===norm(x));
-  if(has('short text')&&has('description')&&has('assembly name')){map.spare_name=has('description');map.description=has('short text');}
-  if(has('description')&&has('inst quantity')&&has('short description')){map.spare_name=has('description');map.description=has('short description');map.required_qty=has('inst quantity');}
+  if(has('short text')&&has('description')&&has('assembly name')){map.spare_name=has('description');map.description=has('short text')}
+  if(has('description')&&has('inst quantity')&&has('short description')){map.spare_name=has('description');map.description=has('short description');map.required_qty=has('inst quantity')}
   return map;
 }
 
-export async function parseUniversalImport(buffer){
-  const ai=await analyzeImport(buffer);
-  const wb=XLSX.read(buffer,{type:'buffer'});
-  const rows=[],issues=[],sheetMappings={};
-  const global=ai.analysis?.mappings||{};
-  const proposedBySheet=ai.analysis?.sheetMappings||ai.analysis?.mappingsBySheet||{};
+export async function parseUniversalImport(buffer,defaultDiscipline=''){
+  const ai=await analyzeImport(buffer),wb=XLSX.read(buffer,{type:'buffer'}),rows=[],issues=[],sheetMappings={};
+  const global=ai.analysis?.mappings||{},proposedBySheet=ai.analysis?.sheetMappings||ai.analysis?.mappingsBySheet||{};
   for(const sheetName of wb.SheetNames){
     const sheetSummary=ai.summary?.sheets?.find(s=>s.name===sheetName)||{name:sheetName,rows:[]};
     const mapping={...localSheetMapping(sheetSummary),...global,...(proposedBySheet?.[sheetName]||{})};
     sheetMappings[sheetName]=mapping;
-    const grid=rowObjects(wb.Sheets[sheetName]);
-    const h=findHeaderIndex(grid,mapping);
+    const grid=rowObjects(wb.Sheets[sheetName]),h=findHeaderIndex(grid,mapping);
     if(columnIndex(h.headers,mapping.material_code)<0){issues.push({sheet:sheetName,reason:'No Material Code mapping available',headers:h.headers.filter(Boolean)});continue}
     for(let i=h.index+1;i<grid.length;i++){
-      const x=canonicalRow(grid[i],h.headers,mapping,sheetName,i+1,ai.analysis?.fileType||'unknown');
+      const x=canonicalRow(grid[i],h.headers,mapping,sheetName,i+1,ai.analysis?.fileType||'unknown',defaultDiscipline);
       if(!x)continue;
       if(x.raw_material_code&&!x.material_code)issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code ignored: ${x.raw_material_code}`});
       rows.push(x);
