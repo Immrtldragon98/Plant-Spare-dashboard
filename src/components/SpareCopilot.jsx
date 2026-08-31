@@ -1,5 +1,6 @@
 import React,{useState} from 'react';
 import {request} from '../api/client.js';
+import './SpareCopilot.css';
 
 const quick=[
   'Show zero-stock spares without PO',
