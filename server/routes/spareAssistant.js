@@ -1,6 +1,7 @@
 import {Router} from 'express';
 import {q} from '../db.js';
 import {auth} from '../auth.js';
+import {getMaterialImportHistory} from '../services/materialHistory.js';
 
 const r=Router();
 const codeFrom=v=>String(v||'').toUpperCase().match(/[A-Z]{3}\d{12}/)?.[0]||null;
@@ -97,6 +98,7 @@ const sapGlossary={
 
 const tools=[
   {type:'function',function:{name:'get_material_profile',description:'Get the authoritative current profile for one spare by Material Code, including requirement, store, PR, PO, gap, locations and spare character.',parameters:{type:'object',properties:{material_code:{type:'string'}},required:['material_code'],additionalProperties:false}}},
+  {type:'function',function:{name:'get_material_history',description:'Get dated Excel/SAP import-change history for one Material Code. Use this when the user asks how stock, PR, PO or vendor values changed over time. This is not consumption/failure history unless an uploaded source explicitly says so.',parameters:{type:'object',properties:{material_code:{type:'string'},limit:{type:'integer',minimum:1,maximum:50}},required:['material_code'],additionalProperties:false}}},
   {type:'function',function:{name:'find_pr_eligible_spares',description:'Find spares whose current stock plus open PR plus open PO does not cover the recorded required quantity.',parameters:{type:'object',properties:{equipment:{type:'string'},sub_equipment:{type:'string'},discipline:{type:'string'},limit:{type:'integer',minimum:1,maximum:50}},additionalProperties:false}}},
   {type:'function',function:{name:'find_zero_stock_spares',description:'Find zero-stock spares, optionally only those without an open PO.',parameters:{type:'object',properties:{without_po:{type:'boolean'},equipment:{type:'string'},sub_equipment:{type:'string'},limit:{type:'integer',minimum:1,maximum:50}},additionalProperties:false}}},
   {type:'function',function:{name:'search_spares',description:'Search spare master data by material code fragment, spare name, description, part number or vendor.',parameters:{type:'object',properties:{search:{type:'string'},equipment:{type:'string'},sub_equipment:{type:'string'},limit:{type:'integer',minimum:1,maximum:50}},required:['search'],additionalProperties:false}}},
@@ -110,6 +112,7 @@ const tools=[
 
 async function runTool(name,args,context){
   if(name==='get_material_profile')return {rows:await materialRows(context,{material_code:args.material_code,limit:5})};
+  if(name==='get_material_history')return getMaterialImportHistory(args.material_code,args.limit||20);
   if(name==='find_pr_eligible_spares')return {rows:await materialRows(context,{...args,pr_eligible:true,limit:args.limit||20})};
   if(name==='find_zero_stock_spares')return {rows:await materialRows(context,{...args,zero_stock:true,no_po:Boolean(args.without_po),limit:args.limit||20})};
   if(name==='search_spares')return {rows:await materialRows(context,{...args,search:args.search,limit:args.limit||20})};
@@ -164,7 +167,7 @@ async function callModel(cfg,messages,withTools=true){
 
 r.get('/spare-assistant/status',auth,(req,res)=>{
   const c=providerConfig();
-  res.json({configured:c.configured,provider:c.provider,model:c.configured?c.model:null,agents:agentModes,integrations:{openRouter:c.provider==='OpenRouter'&&c.configured,internalTools:true,sapMcp:false,sapMcpNote:'Ready to connect when company SAP Integration Suite/MCP endpoint and authorization are available.'},capabilities:{databaseGrounding:true,toolCalling:c.configured,plannerRules:true,conversationContext:true,engineeringCalculators:true,vision:false,web:false}});
+  res.json({configured:c.configured,provider:c.provider,model:c.configured?c.model:null,agents:agentModes,integrations:{openRouter:c.provider==='OpenRouter'&&c.configured,internalTools:true,sapMcp:false,sapMcpNote:'Ready to connect when company SAP Integration Suite/MCP endpoint and authorization are available.'},capabilities:{databaseGrounding:true,materialHistory:true,toolCalling:c.configured,plannerRules:true,conversationContext:true,engineeringCalculators:true,vision:false,web:false}});
 });
 
 r.post('/spare-assistant/ask',auth,async(req,res)=>{
@@ -182,13 +185,13 @@ r.post('/spare-assistant/ask',auth,async(req,res)=>{
   if(!cfg.configured)return res.json({aiEnabled:false,engine:cfg.provider,answer:fallback,materials:fallbackRows.slice(0,12),note:'OpenRouter/API key is not configured yet; using deterministic spare-data tools.'});
 
   const modeInstructions={
-    planner:'Prioritize stock coverage, PR/PO gaps, procurement justification and planner actions. Use material tools before making plant-specific claims.',
+    planner:'Prioritize stock coverage, PR/PO gaps, procurement justification and planner actions. Use material tools before making plant-specific claims. Use material history when the user asks what changed over time.',
     mechanical:'Act as a cautious mechanical maintenance engineer. Help interpret spare descriptions, bearings, shafts, seals, pumps, gearboxes and mechanical nameplate/spec data. Use engineering calculator tools where applicable. Never infer a missing dimension, material grade, tolerance, fit, load rating or OEM specification.',
     electrical:'Act as a cautious electrical maintenance engineer. Help with motors, drives, electrical spares, ratings and nameplate interpretation. Use electrical calculator tools where applicable. Never infer missing voltage, current, protection, cable size, fault level or safety category.',
-    reliability:'Act as a maintenance reliability planner. Focus on criticality, recurring shortage signals, repair-vs-replace evidence, failure context and planning gaps. Do not call import/update counts consumption or failure frequency.',
-    sap:'Act as an SAP-aware spare planner. Explain SAP material/stock/PR/PO terminology and dashboard mappings. Use sap_field_help when needed. Do not claim direct SAP access; SAP MCP is not connected yet.'
+    reliability:'Act as a maintenance reliability planner. Focus on criticality, recurring shortage signals, repair-vs-replace evidence, failure context and planning gaps. Use get_material_history for recurring imported stock/PR/PO changes, but do not call those changes consumption or failure frequency.',
+    sap:'Act as an SAP-aware spare planner. Explain SAP material/stock/PR/PO terminology and dashboard mappings. Use sap_field_help when needed. Use material history for uploaded SAP snapshots. Do not claim direct SAP access; SAP MCP is not connected yet.'
   };
-  const system=`You are Spare Copilot in ${agentModes[mode].label} mode. ${modeInstructions[mode]} The application database and deterministic engineering calculations are authoritative. You MUST use provided tools whenever the user asks about plant spare facts or a calculation that a tool covers. Never invent SAP values, technical specifications, nameplate values, consumption, failure history, lead time, prices or vendor performance. Clearly label estimates/calculations and missing evidence. Never modify data. Current UI context: ${JSON.stringify(context)}.`;
+  const system=`You are Spare Copilot in ${agentModes[mode].label} mode. ${modeInstructions[mode]} The application database and deterministic engineering calculations are authoritative. You MUST use provided tools whenever the user asks about plant spare facts, historical uploaded changes, or a calculation that a tool covers. Never invent SAP values, technical specifications, nameplate values, consumption, failure history, lead time, prices or vendor performance. Clearly label estimates/calculations and missing evidence. Never modify data. Current UI context: ${JSON.stringify(context)}.`;
   const messages=[{role:'system',content:system},...history,{role:'user',content:question}];
   const usedTools=[];
   try{
