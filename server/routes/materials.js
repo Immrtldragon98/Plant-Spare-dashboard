@@ -28,9 +28,10 @@ r.get('/materials',auth,async(req,res)=>{
 });
 
 r.get('/dashboard',auth,async(req,res)=>{
-  const {department_code='',area='',discipline=''}=req.query;const p=[],w=['m.active=true','u.active=true',cleanData];
+  const {department_code='',area='',equipment='',discipline=''}=req.query;const p=[],w=['m.active=true','u.active=true',cleanData];
   if(department_code){p.push(department_code);w.push(`l.department_code=$${p.length}`)}
   if(area){p.push(areaVariants(area));w.push(`l.area_name=ANY($${p.length})`)}
+  if(equipment){p.push(equipment);w.push(`l.equipment_name=$${p.length}`)}
   if(discipline){p.push(discipline);w.push(`u.discipline=$${p.length}`)}
   const x=await q(`WITH scoped AS (
     SELECT m.id,COALESCE(m.store_qty,0) store_qty,COALESCE(m.pr_qty,0) pr_qty,COALESCE(m.po_qty,0) po_qty,MAX(COALESCE(u.required_qty,0)) required_qty
