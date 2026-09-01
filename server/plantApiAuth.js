@@ -37,3 +37,9 @@ export function plantApiWrite(req,res,next){
   if(['planner','admin'].includes(req.user?.role))return next();
   return res.status(403).json({error:'Planner/admin or Plant API service credential required'});
 }
+
+export function plantHumanReview(req,res,next){
+  if(req.apiPrincipal?.type!=='user')return res.status(403).json({error:'Human review requires a signed-in planner or admin user'});
+  if(['planner','admin'].includes(req.user?.role))return next();
+  return res.status(403).json({error:'Planner/admin permission required for ingestion approval'});
+}
