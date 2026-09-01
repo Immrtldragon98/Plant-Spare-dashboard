@@ -2,11 +2,13 @@ import {Router} from 'express';
 import multer from 'multer';
 import {auth,allow} from '../auth.js';
 import {listKnowledgeDocuments,saveKnowledgeDocument,searchKnowledge,knowledgeStatus} from '../services/knowledge.js';
+import {beginIngestionJob,completeIngestionJob,failIngestionJob,listIngestionJobs} from '../services/ingestionJobs.js';
 
 const r=Router();
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:20*1024*1024}});
 
 r.get('/knowledge/status',auth,async(req,res)=>res.json(await knowledgeStatus()));
+r.get('/knowledge/jobs',auth,allow('planner','admin'),async(req,res)=>res.json(await listIngestionJobs(req.query.limit)));
 
 r.get('/knowledge',auth,async(req,res)=>{
   res.json(await listKnowledgeDocuments(req.query.limit));
@@ -15,8 +17,12 @@ r.get('/knowledge',auth,async(req,res)=>{
 r.post('/knowledge/upload',auth,allow('planner','admin'),upload.single('file'),async(req,res)=>{
   if(!req.file)return res.status(400).json({error:'PDF or text file required'});
   const metadata={title:req.body.title,document_type:req.body.document_type,manufacturer:req.body.manufacturer,department_code:req.body.department_code,equipment:req.body.equipment,sub_equipment:req.body.sub_equipment,discipline:req.body.discipline,material_code:req.body.material_code,notes:req.body.notes};
-  const out=await saveKnowledgeDocument({file:req.file,metadata,userId:req.user.id});
-  res.json({ok:true,...out,message:out.originalArchived?'Document indexed for RAG and original file archived in object storage.':'Document indexed for RAG. Original binary is not archived because object storage is not configured.'});
+  const job=await beginIngestionJob({jobType:'knowledge_document',sourceName:req.file.originalname,requestId:req.requestId,payload:{mime_type:req.file.mimetype,file_size:req.file.size,metadata},createdBy:req.user.id});
+  try{
+    const out=await saveKnowledgeDocument({file:req.file,metadata,userId:req.user.id});
+    await completeIngestionJob(job,{document_id:out.id,chunks:out.chunks,originalArchived:out.originalArchived,deduplicated:out.deduplicated});
+    res.json({ok:true,...out,jobId:job.id||null,message:out.originalArchived?'Document indexed for RAG and original file archived in object storage.':'Document indexed for RAG. Original binary is not archived because object storage is not configured.'});
+  }catch(error){await failIngestionJob(job,error);throw error}
 });
 
 r.post('/knowledge/search',auth,async(req,res)=>{
