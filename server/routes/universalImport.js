@@ -6,6 +6,8 @@ import {parseUniversalImport} from '../services/universalImport.js';
 import {findOrCreateLocation,getDepartment} from '../services/locationService.js';
 import {recordImportMaterialEvents} from '../services/materialEvents.js';
 import {appendProcurementEvent,procurementEventsAvailable} from '../services/procurementEvents.js';
+import {resolveOrRepairMaterial} from '../services/materialIdentityRepair.js';
+import {audit} from '../services/auditService.js';
 
 const r=Router();
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:15*1024*1024}});
@@ -34,7 +36,7 @@ r.post('/import/universal/confirm',auth,allow('planner','admin'),upload.single('
   if(!req.file)return res.status(400).json({error:'Excel file required'});
   const {department_code,equipment,discipline}=await scope(req),out=await parseUniversalImport(req.file.buffer,discipline);
   if(!writable.has(out.fileType))return res.status(400).json({error:`${out.fileType.replaceAll('_',' ')} is currently preview-only. Rich transaction/history storage must be enabled before Confirm.`});
-  let added=0,updated=0,unchanged=0,skipped=0;const missing=[],changes=[],procurementRows=[];
+  let added=0,updated=0,unchanged=0,skipped=0,repairedMaterialCodes=0;const missing=[],changes=[],procurementRows=[],repairs=[];
   if(out.fileType==='master'){
     if(!equipment)return res.status(400).json({error:'Select Equipment for a master import'});
     for(const row of out.rows){
@@ -54,8 +56,9 @@ r.post('/import/universal/confirm',auth,allow('planner','admin'),upload.single('
   }else{
     for(const row of out.rows){
       if(!row.material_code){skipped++;continue}
-      const m=(await q('SELECT * FROM materials WHERE upper(material_code)=upper($1) AND active=true',[row.material_code])).rows[0];
+      const resolved=await resolveOrRepairMaterial(row.material_code,{userId:req.user.id}),m=resolved.material;
       if(!m){missing.push(row.material_code);skipped++;continue}
+      if(resolved.repaired){repairedMaterialCodes++;repairs.push({material_code:row.material_code,reason:resolved.reason,old_material_code:resolved.old?.material_code||null,material_id:m.id});await audit(req.user,'material_code_safe_correction','material',m.id,row.material_code,resolved.old,m)}
       if(out.fileType==='open_pr')procurementRows.push({material_id:m.id,material_code:row.material_code,event_type:'PR_SNAPSHOT',document_number:row.pr_number,document_item:row.pr_item,open_quantity:row.pr_qty,vendor:row.vendor,event_date:row.pr_raised_date,expected_date:row.expected_date,metadata:{tracking_id:row.tracking_id,source_sheet:row.source_sheet,source_row:row.source_row}});
       if(out.fileType==='open_po')procurementRows.push({material_id:m.id,material_code:row.material_code,event_type:'PO_SNAPSHOT',document_number:row.po_number,document_item:row.pr_item,open_quantity:row.po_qty,vendor:row.vendor,event_date:row.po_raised_date,expected_date:row.expected_date,metadata:{pr_number:row.pr_number,source_sheet:row.source_sheet,source_row:row.source_row}});
       const next={store_qty:m.store_qty,pr_qty:m.pr_qty,po_qty:m.po_qty,vendor:m.vendor},old={},changed={};
@@ -67,12 +70,12 @@ r.post('/import/universal/confirm',auth,allow('planner','admin'),upload.single('
       changes.push({material_id:m.id,material_code:row.material_code,old,new:changed});updated++;
     }
   }
-  const details={department_code,equipment,default_discipline:discipline||null,file_type:out.fileType,ai_source:out.source,issues:out.issues,missing_material_codes:missing,changes};
+  const details={department_code,equipment,default_discipline:discipline||null,file_type:out.fileType,ai_source:out.source,issues:out.issues,missing_material_codes:missing,repaired_material_codes:repairs,changes};
   const hist=(await q(`INSERT INTO import_history(import_type,file_name,total_rows,added_rows,updated_rows,skipped_rows,issue_rows,details,imported_by) VALUES('universal_ai',$1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[req.file.originalname,out.rows.length,added,updated,skipped,out.issues.length,JSON.stringify(details),req.user.id])).rows[0];
   const eventResult=await recordImportMaterialEvents(changes,{sourceType:`universal_${out.fileType}`,sourceRef:req.file.originalname,importHistoryId:hist.id,createdBy:req.user.id});
   let procurementStored=0;
   if(procurementRows.length&&await procurementEventsAvailable())for(const event of procurementRows){const saved=await appendProcurementEvent({...event,source_batch_id:hist.id,source_file:req.file.originalname,created_by:req.user.id});if(saved.stored)procurementStored++}
-  res.json({ok:true,batchId:hist.id,fileType:out.fileType,total:out.rows.length,added,updated,unchanged,skipped,missingMaterialCodes:missing,issues:out.issues,eventStore:eventResult,procurementEventStore:{enabled:await procurementEventsAvailable(),captured:procurementStored,candidates:procurementRows.length}});
+  res.json({ok:true,batchId:hist.id,fileType:out.fileType,total:out.rows.length,added,updated,unchanged,skipped,repairedMaterialCodes,missingMaterialCodes:missing,issues:out.issues,eventStore:eventResult,procurementEventStore:{enabled:await procurementEventsAvailable(),captured:procurementStored,candidates:procurementRows.length}});
 });
 
 export default r;
