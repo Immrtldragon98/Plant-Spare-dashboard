@@ -20,5 +20,11 @@ CREATE INDEX IF NOT EXISTS idx_material_events_code_time ON material_events(mate
 CREATE INDEX IF NOT EXISTS idx_material_events_type_time ON material_events(event_type,event_at DESC);
 CREATE INDEX IF NOT EXISTS idx_material_events_import ON material_events(import_history_id) WHERE import_history_id IS NOT NULL;
 
+-- Procurement events preserve document-level PR/PO/RGP/NRGP history separately from current aggregate quantities.
+CREATE TABLE IF NOT EXISTS procurement_events(id BIGSERIAL PRIMARY KEY,material_id BIGINT REFERENCES materials(id) ON DELETE SET NULL,material_code TEXT,event_type TEXT NOT NULL CHECK(event_type IN ('PR_SNAPSHOT','PO_SNAPSHOT','PR_OPENED','PO_CREATED','PO_DELIVERY','RGP_OUT','RGP_IN','NRGP_OUT','NRGP_IN')),document_number TEXT,document_item TEXT,quantity NUMERIC,open_quantity NUMERIC,vendor TEXT,event_date TIMESTAMPTZ,expected_date TIMESTAMPTZ,source_batch_id BIGINT REFERENCES import_history(id) ON DELETE SET NULL,source_file TEXT,metadata JSONB,created_by BIGINT REFERENCES users(id),created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS idx_procurement_events_material_time ON procurement_events(material_code,COALESCE(event_date,created_at) DESC);
+CREATE INDEX IF NOT EXISTS idx_procurement_events_document ON procurement_events(document_number) WHERE document_number IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_procurement_events_type_time ON procurement_events(event_type,COALESCE(event_date,created_at) DESC);
+
 CREATE TABLE IF NOT EXISTS audit_log(id BIGSERIAL PRIMARY KEY,user_id BIGINT REFERENCES users(id),action TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id BIGINT,material_code TEXT,old_data JSONB,new_data JSONB,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS schema_migrations(version TEXT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
