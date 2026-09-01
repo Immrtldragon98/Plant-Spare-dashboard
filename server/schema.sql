@@ -26,5 +26,14 @@ CREATE INDEX IF NOT EXISTS idx_procurement_events_material_time ON procurement_e
 CREATE INDEX IF NOT EXISTS idx_procurement_events_document ON procurement_events(document_number) WHERE document_number IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_procurement_events_type_time ON procurement_events(event_type,COALESCE(event_date,created_at) DESC);
 
+-- RAG knowledge model. Original binaries belong in object storage; Postgres keeps metadata and searchable chunks.
+CREATE TABLE IF NOT EXISTS knowledge_documents(id BIGSERIAL PRIMARY KEY,title TEXT NOT NULL,file_name TEXT NOT NULL,document_type TEXT NOT NULL DEFAULT 'Manual',manufacturer TEXT,department_code TEXT,equipment TEXT,sub_equipment TEXT,discipline TEXT,material_code TEXT,notes TEXT,mime_type TEXT,file_size BIGINT,content_hash TEXT,storage_provider TEXT NOT NULL DEFAULT 'text-only',storage_bucket TEXT,storage_key TEXT,storage_url TEXT,original_archived BOOLEAN NOT NULL DEFAULT FALSE,active BOOLEAN NOT NULL DEFAULT TRUE,uploaded_by BIGINT REFERENCES users(id),uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_scope ON knowledge_documents(department_code,equipment,sub_equipment,discipline);
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_material ON knowledge_documents(material_code) WHERE material_code IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_documents_hash_unique ON knowledge_documents(content_hash) WHERE content_hash IS NOT NULL AND active=TRUE;
+CREATE TABLE IF NOT EXISTS knowledge_chunks(id BIGSERIAL PRIMARY KEY,document_id BIGINT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,chunk_index INT NOT NULL,content TEXT NOT NULL,token_hint INT,metadata JSONB NOT NULL DEFAULT '{}'::jsonb,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(document_id,chunk_index));
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document ON knowledge_chunks(document_id,chunk_index);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_fts ON knowledge_chunks USING GIN(to_tsvector('simple',content));
+
 CREATE TABLE IF NOT EXISTS audit_log(id BIGSERIAL PRIMARY KEY,user_id BIGINT REFERENCES users(id),action TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id BIGINT,material_code TEXT,old_data JSONB,new_data JSONB,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS schema_migrations(version TEXT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
