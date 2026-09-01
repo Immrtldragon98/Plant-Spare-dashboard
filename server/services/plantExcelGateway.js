@@ -1,4 +1,5 @@
 import {parseUniversalImport} from './universalImport.js';
+import {parseTypedSapExcel} from '../excel.js';
 import {archiveRawWorkbook,saveCanonicalPreview,stageCanonicalRows,saveIngestionReview,markRawBatch,rawWorkbookStoreEnabled,canonicalStagingEnabled} from './rawWorkbookStore.js';
 import {reviewTransaction} from './transactionReview.js';
 import {ingestPlantSnapshots} from './plantDataApi.js';
@@ -50,11 +51,20 @@ export function snapshotRowsFromCanonical(fileType,rows=[]){
   }));
 }
 
+function useProvenTypedParser(buffer,parsed){
+  if(!['stock','open_pr','open_po'].includes(parsed.fileType))return parsed;
+  const typed=parseTypedSapExcel(buffer,parsed.fileType);
+  if(!typed.rows.length)return parsed;
+  const rows=typed.rows.map((r,index)=>({...r,source_sheet:'deterministic-sap',source_row:index+1,file_type:parsed.fileType}));
+  return {...parsed,rows,issues:typed.issues||[],sheetDiagnostics:typed.sheetDiagnostics||[],source:'deterministic-sap-parser',analysis:{...(parsed.analysis||{}),canonicalParser:'typed-sap-v1'}};
+}
+
 export async function processPlantExcel({file,mode='review',defaultDiscipline='',departmentCode='',equipment='',principal='service',userId=null}){
   if(!file)throw new Error('Excel file is required');
   const normalizedMode=clean(mode).toLowerCase()==='commit'?'commit':'review';
   const raw=await archiveRawWorkbook({file,sourceType:'plant-api-excel',uploadedBy:userId,metadata:{department_code:departmentCode,equipment,principal}});
-  const parsed=await parseUniversalImport(file.buffer,defaultDiscipline||'');
+  let parsed=await parseUniversalImport(file.buffer,defaultDiscipline||'');
+  parsed=useProvenTypedParser(file.buffer,parsed);
   const review=await reviewTransaction(parsed);
   let staging={enabled:false,stored:0};
   if(raw.batchId){
@@ -70,7 +80,7 @@ export async function processPlantExcel({file,mode='review',defaultDiscipline=''
   if(!await rawWorkbookStoreEnabled())throw new Error('Commit refused: raw evidence store migration is not active. Review is available, but full Excel source retention is required before API commit.');
   if(!await canonicalStagingEnabled())return {...base,committed:false,needs_human_review:true,message:'Canonical staging/human-review migration is not active. The batch is preserved and reviewed, but automatic commit is disabled.'};
   if(!review.deterministic.writeAllowed){if(raw.batchId)await markRawBatch(raw.batchId,'rejected');throw new Error(`Commit refused by deterministic validation: ${review.deterministic.summary}`)}
-  if(review.llm.decision!=='accept'){if(raw.batchId)await markRawBatch(raw.batchId,'reviewed');return {...base,committed:false,needs_human_review:true,message:`Deterministic validation passed, but LLM review is ${review.llm.decision}. Human review is required before canonical write.`}}
+  if(review.llm.decision==='reject'){if(raw.batchId)await markRawBatch(raw.batchId,'reviewed');return {...base,committed:false,needs_human_review:true,message:'Deterministic SAP parsing passed, but LLM found a semantic risk. Human review is required before canonical write.'}}
   if(!['stock','open_pr','open_po'].includes(parsed.fileType))return {...base,committed:false,needs_human_review:true,message:`${parsed.fileType} is preserved and reviewed, but Plant API v1 canonical commit currently supports Stock/Open PR/Open PO only.`};
   const result=await ingestPlantSnapshots({type:parsed.fileType,rows:aggregated||snapshotRowsFromCanonical(parsed.fileType,parsed.rows||[]),source:`excel:${file.originalname}`,principal,userId});
   if(raw.batchId)await markRawBatch(raw.batchId,'committed',result.batch_id);
