@@ -36,7 +36,6 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_status_created ON ingestion_jobs(s
 CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_type_created ON ingestion_jobs(job_type,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_request ON ingestion_jobs(request_id) WHERE request_id IS NOT NULL;
 
--- Bronze/raw evidence layer: preserves every uploaded Excel row before canonical writes.
 CREATE TABLE IF NOT EXISTS raw_upload_batches(id BIGSERIAL PRIMARY KEY,import_history_id BIGINT REFERENCES import_history(id) ON DELETE SET NULL,source_name TEXT NOT NULL,source_type TEXT NOT NULL DEFAULT 'excel',content_hash TEXT NOT NULL,workbook_meta JSONB NOT NULL DEFAULT '{}'::jsonb,storage_provider TEXT NOT NULL DEFAULT 'db-only',storage_bucket TEXT,storage_key TEXT,original_archived BOOLEAN NOT NULL DEFAULT FALSE,status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','reviewed','committed','rejected','failed')),uploaded_by BIGINT REFERENCES users(id),uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE INDEX IF NOT EXISTS idx_raw_upload_batches_time ON raw_upload_batches(uploaded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_raw_upload_batches_hash ON raw_upload_batches(content_hash);
@@ -44,6 +43,11 @@ CREATE TABLE IF NOT EXISTS raw_upload_rows(id BIGSERIAL PRIMARY KEY,batch_id BIG
 CREATE INDEX IF NOT EXISTS idx_raw_upload_rows_batch_sheet ON raw_upload_rows(batch_id,sheet_name,row_number);
 CREATE TABLE IF NOT EXISTS ingestion_reviews(id BIGSERIAL PRIMARY KEY,batch_id BIGINT NOT NULL REFERENCES raw_upload_batches(id) ON DELETE CASCADE,review_type TEXT NOT NULL CHECK(review_type IN ('deterministic','llm')),decision TEXT NOT NULL CHECK(decision IN ('accept','warn','reject','unavailable')),confidence NUMERIC,model TEXT,findings JSONB NOT NULL DEFAULT '[]'::jsonb,summary TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE INDEX IF NOT EXISTS idx_ingestion_reviews_batch ON ingestion_reviews(batch_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS ingestion_canonical_rows(id BIGSERIAL PRIMARY KEY,batch_id BIGINT NOT NULL REFERENCES raw_upload_batches(id) ON DELETE CASCADE,row_index INT NOT NULL,file_type TEXT NOT NULL,material_code TEXT,payload JSONB NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(batch_id,row_index));
+CREATE INDEX IF NOT EXISTS idx_ingestion_canonical_rows_batch ON ingestion_canonical_rows(batch_id,row_index);
+CREATE INDEX IF NOT EXISTS idx_ingestion_canonical_rows_material ON ingestion_canonical_rows(material_code) WHERE material_code IS NOT NULL;
+CREATE TABLE IF NOT EXISTS ingestion_human_reviews(id BIGSERIAL PRIMARY KEY,batch_id BIGINT NOT NULL UNIQUE REFERENCES raw_upload_batches(id) ON DELETE CASCADE,decision TEXT NOT NULL CHECK(decision IN ('approve','reject')),note TEXT,reviewed_by BIGINT REFERENCES users(id),reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS idx_ingestion_human_reviews_time ON ingestion_human_reviews(reviewed_at DESC);
 
 CREATE TABLE IF NOT EXISTS audit_log(id BIGSERIAL PRIMARY KEY,user_id BIGINT REFERENCES users(id),action TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id BIGINT,material_code TEXT,old_data JSONB,new_data JSONB,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS schema_migrations(version TEXT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
