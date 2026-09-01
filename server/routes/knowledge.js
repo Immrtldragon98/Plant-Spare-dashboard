@@ -2,6 +2,7 @@ import {Router} from 'express';
 import multer from 'multer';
 import {auth,allow} from '../auth.js';
 import {listKnowledgeDocuments,saveKnowledgeDocument,searchKnowledge,knowledgeStatus} from '../services/knowledge.js';
+import {getKnowledgePage} from '../services/knowledgeCatalog.js';
 import {beginIngestionJob,completeIngestionJob,failIngestionJob,listIngestionJobs} from '../services/ingestionJobs.js';
 
 const r=Router();
@@ -9,6 +10,7 @@ const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:20*1024*102
 
 r.get('/knowledge/status',auth,async(req,res)=>res.json(await knowledgeStatus()));
 r.get('/knowledge/jobs',auth,allow('planner','admin'),async(req,res)=>res.json(await listIngestionJobs(req.query.limit)));
+r.get('/knowledge/page',auth,async(req,res)=>res.json(await getKnowledgePage(req.query)));
 
 r.get('/knowledge',auth,async(req,res)=>{
   res.json(await listKnowledgeDocuments(req.query.limit));
