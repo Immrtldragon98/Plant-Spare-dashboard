@@ -5,6 +5,7 @@ import {getEquipmentSummary} from './equipmentSummary.js';
 import {procurementPage} from './procurementService.js';
 import {recordImportMaterialEvents} from './materialEvents.js';
 import {appendProcurementEvent,procurementEventsAvailable} from './procurementEvents.js';
+import {rawWorkbookStoreEnabled} from './rawWorkbookStore.js';
 
 const clean=v=>String(v??'').trim();
 const same=(a,b)=>String(a??'')===String(b??'');
@@ -12,7 +13,7 @@ const validSnapshotTypes=new Set(['stock','open_pr','open_po']);
 
 export async function plantApiStatus(){
   const counts=(await q(`SELECT (SELECT COUNT(*) FROM materials WHERE active=true)::int materials,(SELECT COUNT(*) FROM material_usages WHERE active=true)::int usages,(SELECT COUNT(*) FROM locations WHERE active=true)::int locations`)).rows[0];
-  return {api:'Plant Data API',version:'v1',sourceOfTruth:'Neon structured data validated by domain services',capabilities:{materials:true,equipment:true,hierarchy:true,procurement:true,snapshotIngest:true,masterWrite:false},counts};
+  return {api:'Plant Data API',version:'v1',sourceOfTruth:'Canonical Neon data validated by deterministic domain rules; LLM reviews semantics but never overrides hard validation',capabilities:{materials:true,equipment:true,hierarchy:true,procurement:true,snapshotIngest:true,excelReview:true,excelCommit:['stock','open_pr','open_po'],rawEvidenceStore:await rawWorkbookStoreEnabled(),masterWrite:false},counts};
 }
 
 export async function plantMaterials(input={}){return getMaterialPage(input)}
