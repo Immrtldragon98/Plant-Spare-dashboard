@@ -28,3 +28,9 @@ export async function listIngestionJobs(limit=50){
   const jobs=(await q(`SELECT id,job_type,status,source_name,request_id,payload,result,error_message,created_by,created_at,started_at,finished_at FROM ingestion_jobs ORDER BY created_at DESC LIMIT $1`,[Math.min(Math.max(Number(limit)||50,1),200)])).rows;
   return {enabled:true,jobs};
 }
+
+export async function getIngestionJob(id){
+  if(!await ingestionJobsEnabled())return {enabled:false,job:null};
+  const job=(await q(`SELECT id,job_type,status,source_name,request_id,payload,result,error_message,created_by,created_at,started_at,finished_at,updated_at FROM ingestion_jobs WHERE id=$1`,[id])).rows[0]||null;
+  return {enabled:true,job};
+}
