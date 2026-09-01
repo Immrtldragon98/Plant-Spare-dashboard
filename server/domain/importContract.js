@@ -5,7 +5,7 @@ export const CANONICAL_IMPORT_FIELDS={
   identity:['material_code','alternate_material_code','spare_name','description','part_number','uom','manufacturer','vendor','vendor_code'],
   hierarchy:['discipline','assembly_name','equipment_description'],
   inventory:['required_qty','store_qty','safety_stock','installed_qty'],
-  procurement:['pr_qty','po_qty','planned_pr_qty','ideal_pr_qty','tracking_id','pr_number','pr_item','po_number','pr_raised_date','po_raised_date','rate','total_price','lead_time_years','justification'],
+  procurement:['pr_qty','po_qty','planned_pr_qty','ideal_pr_qty','tracking_id','pr_number','pr_item','po_number','po_item','pr_raised_date','po_raised_date','rate','total_price','lead_time_years','justification'],
   consumption:['consumption_fy24','consumption_fy25','consumption_fy26','consumption_fy27','last_issue_date'],
   reliability:['failure_root_cause','oem_recommended_life','ved','ved_new','indigenous_imported','local_repair'],
   transaction:['expected_date','out_date','in_date','notes'],
@@ -40,7 +40,7 @@ export function validateCanonicalRow(row,{requiresMaterialCode=true}={}){
   const issues=[];
   if(requiresMaterialCode&&!row.material_code)issues.push('Missing or invalid Material Code');
   if(row.raw_discipline)issues.push(`Unknown Discipline: ${row.raw_discipline}`);
-  for(const field of [...CANONICAL_IMPORT_FIELDS.inventory,...CANONICAL_IMPORT_FIELDS.procurement.filter(x=>!['tracking_id','pr_number','pr_item','po_number','pr_raised_date','po_raised_date','justification'].includes(x)),...CANONICAL_IMPORT_FIELDS.consumption.filter(x=>x!=='last_issue_date')]){
+  for(const field of [...CANONICAL_IMPORT_FIELDS.inventory,...CANONICAL_IMPORT_FIELDS.procurement.filter(x=>!['tracking_id','pr_number','pr_item','po_number','po_item','pr_raised_date','po_raised_date','justification'].includes(x)),...CANONICAL_IMPORT_FIELDS.consumption.filter(x=>x!=='last_issue_date')]){
     const v=row[field];if(v!==null&&v!==undefined&&!Number.isFinite(Number(v)))issues.push(`Invalid numeric value for ${field}`);
   }
   return issues;
