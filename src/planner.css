@@ -1,0 +1,133 @@
+/* V4 planner-first readability overrides. Intentionally favors scanning comfort over fitting everything above the fold. */
+body{font-size:15px}
+main{max-width:1460px;padding:34px 32px 80px}
+.pageTitle{margin-bottom:26px}
+.pageTitle h1{font-size:32px;line-height:1.2}
+.pageTitle p{font-size:16px;line-height:1.6;margin-top:8px;max-width:900px}
+.eyebrow{font-size:12px;margin-bottom:9px}
+
+.appHeader{height:72px;padding:0 30px}
+.brandBlock>div strong{font-size:18px}
+.brandBlock>div span{font-size:13px;margin-top:2px}
+.brandDot{width:36px;height:36px;font-size:15px!important}
+.appNav{height:56px;padding:0 28px;gap:5px}
+.appNav button{font-size:14px;padding:10px 13px}
+.user{font-size:15px}
+.user small{font-size:12px}
+
+.dashContext,.equipmentToolbar{padding:18px 20px;gap:14px;margin-bottom:22px}
+.dashContext>div,.equipmentToolbar>div{grid-template-columns:105px 1fr;gap:14px}
+.dashContext>div>span,.equipmentToolbar>div>span{font-size:12px}
+.chipRow{gap:9px}
+.chip{font-size:13px!important;padding:9px 12px!important}
+
+.dashKpis{grid-template-columns:repeat(3,minmax(220px,1fr));gap:16px;margin-bottom:30px}
+.dashKpi{min-height:132px;padding:20px 22px;border-radius:15px}
+.dashKpi span{font-size:13px;line-height:1.4}
+.dashKpi strong{font-size:36px;margin-top:12px;line-height:1}
+.dashKpi small{font-size:12px;margin-top:10px}
+
+.dashActions{margin-top:30px}
+.dashActions h2{font-size:25px;margin-bottom:6px}
+.dashActions>p{font-size:14px;line-height:1.5;margin-bottom:16px}
+.dashActionGrid{grid-template-columns:repeat(2,1fr);gap:15px}
+.dashActionGrid button{padding:20px 22px;min-height:96px;border-radius:14px}
+.dashActionGrid button strong{font-size:17px}
+.dashActionGrid button span{font-size:13px;line-height:1.5;margin-top:7px}
+
+.pageMeta{padding:13px 16px}
+.pageMeta strong{font-size:22px}
+.pageMeta span{font-size:12px;margin-top:4px}
+
+/* Tables are work surfaces: make them comfortably readable. */
+th,td{padding:14px 15px;font-size:14px;line-height:1.45}
+th{font-size:12px}
+.tableWrap{border-radius:15px}
+.code{font-size:13px}
+.pagination{font-size:13px;padding:16px 4px}
+
+/* Intelligence */
+.intelKpis{grid-template-columns:repeat(3,minmax(190px,1fr));gap:15px;margin-bottom:22px}
+.intelKpi{padding:19px 20px;min-height:112px}
+.intelKpi span,.intelKpi small{font-size:13px}
+.intelKpi strong{font-size:32px;margin-top:9px}
+.intelToolbar{padding:13px;gap:12px;margin-bottom:18px}
+.intelToolbar>input{height:45px;font-size:14px}
+.intelToolbar>span{font-size:13px}
+.segmented button{font-size:13px;padding:9px 12px}
+.intelAiNote{font-size:13px;padding:13px 15px}
+.intelligenceTable .tableTitle{font-size:14px}
+.intelligenceTable td small{font-size:12px;line-height:1.45;margin-top:5px}
+.intelFootnote{font-size:13px;line-height:1.5}
+
+/* Procurement */
+.procWorkspaceBar{padding:13px;gap:14px;margin-bottom:18px}
+.procSearch input{height:45px;font-size:14px}
+.procurementTable .tableTitle{font-size:13px;margin-top:5px}
+.emptyState{padding:46px 28px}
+.emptyState h3{font-size:21px}
+.emptyState p{font-size:14px;line-height:1.55}
+
+/* Equipment */
+.equipmentGrid{grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:15px}
+.equipmentCard{padding:20px;min-height:180px;border-radius:15px}
+.equipmentCard>div span{font-size:11px}
+.equipmentCard>div strong{font-size:18px;margin-top:5px}
+.equipmentCount{font-size:34px;margin-top:18px}
+.equipmentCard small{font-size:12px}
+.equipmentCard p{font-size:13px;line-height:1.5;margin:12px 0}
+.equipmentCard code{font-size:11px}
+
+/* Imports: workflow should breathe rather than look like a dense control panel. */
+.importSteps{gap:12px;margin-bottom:20px}
+.importSteps>div{padding:13px 15px;font-size:13px}
+.importSteps b{width:28px;height:28px}
+.importContext{padding:20px;margin-bottom:20px}
+.importContext>div:first-child span{font-size:13px;line-height:1.5}
+.importContextFields{gap:14px;margin-top:16px}
+.importContextFields label{font-size:13px;gap:7px}
+.importContextFields select{height:44px;font-size:14px}
+.contextLine{font-size:13px;padding:11px 13px;margin-top:13px}
+.reviewSection{margin-top:24px}
+.advancedImports,.historyPanel{margin-top:22px;padding:15px 17px}
+.advancedImports summary,.historyPanel summary{font-size:14px}
+.fileHelp{font-size:13px;line-height:1.5;padding:14px 16px}
+
+/* Knowledge */
+.knowledgeHero{gap:15px;margin-bottom:22px}
+.knowledgeHero>div{padding:20px}
+.knowledgeHero strong{font-size:29px}
+.knowledgeHero span{font-size:13px;line-height:1.45;margin-top:7px}
+.knowledgeSearch{padding:22px}
+.knowledgeSearch h2,.sectionHead h2{font-size:22px}
+.knowledgeSearch p,.sectionHead p{font-size:14px;line-height:1.55}
+.knowledgeSearchBar{margin-top:17px;gap:10px}
+.knowledgeSearchBar input{height:47px;font-size:14px}
+.knowledgeHits{gap:13px;margin-top:18px}
+.knowledgeHits article{padding:17px}
+.knowledgeHits article span,.knowledgeHits article small{font-size:12px}
+.knowledgeHits article p{font-size:14px;line-height:1.6;margin:11px 0}
+.knowledgeUpload{margin-top:20px;padding:15px 17px}
+.knowledgeUpload summary{font-size:14px}
+
+/* General form and card readability */
+input,select,button{font-size:14px}
+.card span,.muted{font-size:13px;line-height:1.45}
+.sectionHead{margin-bottom:14px}
+section{margin-top:32px}
+
+@media(max-width:1100px){
+  main{padding:28px 22px 70px}
+  .dashKpis{grid-template-columns:repeat(2,1fr)}
+  .dashActionGrid{grid-template-columns:1fr 1fr}
+  .intelKpis{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:760px){
+  main{padding:22px 14px 64px}
+  .pageTitle h1{font-size:27px}
+  .pageTitle p{font-size:14px}
+  .dashKpis,.intelKpis,.dashActionGrid{grid-template-columns:1fr}
+  .dashKpi{min-height:112px}
+  .dashContext>div,.equipmentToolbar>div{grid-template-columns:1fr}
+  .appNav button{font-size:13px}
+}
