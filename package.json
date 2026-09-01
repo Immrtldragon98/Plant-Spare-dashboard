@@ -10,7 +10,8 @@
     "build": "vite build",
     "test": "node --test server/**/*.test.js",
     "start": "node server/index.js",
-    "db:init": "node server/init-db.js"
+    "db:init": "node server/init-db.js",
+    "db:migrate": "node server/migrate.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
