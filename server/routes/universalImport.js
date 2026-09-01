@@ -4,6 +4,7 @@ import {auth,allow} from '../auth.js';
 import {q} from '../db.js';
 import {parseUniversalImport} from '../services/universalImport.js';
 import {findOrCreateLocation,getDepartment} from '../services/locationService.js';
+import {recordImportMaterialEvents} from '../services/materialEvents.js';
 
 const r=Router();
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:15*1024*1024}});
@@ -36,7 +37,7 @@ r.post('/import/universal/confirm',auth,allow('planner','admin'),upload.single('
   if(!writable.has(out.fileType))return res.status(400).json({error:`${out.fileType.replaceAll('_',' ')} is currently preview-only. Rich transaction/history storage must be enabled before Confirm.`});
   let added=0,updated=0,unchanged=0,skipped=0;const missing=[],changes=[];
   if(out.fileType==='master'){
-    if(!equipment)return res.status(400).json({error:'Select Equipment (WRM / ICM / PFA / Utility) for a master import'});
+    if(!equipment)return res.status(400).json({error:'Select Equipment for a master import'});
     for(const row of out.rows){
       if(!row.material_code){skipped++;continue}
       const x={department_code,area:equipment,equipment,sub_equipment:row.assembly_name||row.source_sheet,sap_location_code:null};
@@ -69,7 +70,8 @@ r.post('/import/universal/confirm',auth,allow('planner','admin'),upload.single('
   }
   const details={department_code,equipment,default_discipline:discipline||null,file_type:out.fileType,ai_source:out.source,issues:out.issues,missing_material_codes:missing,changes};
   const hist=(await q(`INSERT INTO import_history(import_type,file_name,total_rows,added_rows,updated_rows,skipped_rows,issue_rows,details,imported_by) VALUES('universal_ai',$1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[req.file.originalname,out.rows.length,added,updated,skipped,out.issues.length,JSON.stringify(details),req.user.id])).rows[0];
-  res.json({ok:true,batchId:hist.id,fileType:out.fileType,total:out.rows.length,added,updated,unchanged,skipped,missingMaterialCodes:missing,issues:out.issues});
+  const eventResult=await recordImportMaterialEvents(changes,{sourceType:`universal_${out.fileType}`,sourceRef:req.file.originalname,importHistoryId:hist.id,createdBy:req.user.id});
+  res.json({ok:true,batchId:hist.id,fileType:out.fileType,total:out.rows.length,added,updated,unchanged,skipped,missingMaterialCodes:missing,issues:out.issues,eventStore:eventResult});
 });
 
 export default r;
