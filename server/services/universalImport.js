@@ -1,13 +1,12 @@
 import XLSX from 'xlsx';
 import {canonicalMaterialCode,vendorName} from '../excel.js';
 import {analyzeImport} from './importAI.js';
+import {cleanText,normalizeHeader,parseImportNumber,normalizeDiscipline,validateCanonicalRow} from '../domain/importContract.js';
 
-const clean=v=>String(v??'').trim();
-const num=v=>{if(v===null||v===undefined||clean(v)==='')return null;const m=String(v).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0]):null};
+const clean=cleanText;
+const num=parseImportNumber;
 const date=v=>clean(v)||null;
-const norm=v=>clean(v).toLowerCase().replace(/[._\-/()]+/g,' ').replace(/\s+/g,' ');
-const validDisciplines=new Set(['Mechanical','Electrical','Instrumentation','Operation','Process','Common / Other']);
-const disciplineValue=v=>{const s=clean(v);if(!s)return null;const hit=[...validDisciplines].find(x=>x.toLowerCase()===s.toLowerCase());return hit||s};
+const norm=normalizeHeader;
 
 function rowObjects(sheet){return XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:false})}
 
@@ -28,7 +27,8 @@ function read(row,headers,mapping,key){const idx=columnIndex(headers,mapping?.[k
 function canonicalRow(row,headers,mapping,sheetName,rowNumber,fileType,defaultDiscipline=''){
   const rawCode=read(row,headers,mapping,'material_code');
   const material_code=canonicalMaterialCode(rawCode);
-  const mappedDiscipline=disciplineValue(read(row,headers,mapping,'discipline'));
+  const rawDiscipline=clean(read(row,headers,mapping,'discipline'));
+  const mappedDiscipline=normalizeDiscipline(rawDiscipline);
   const out={
     material_code,
     raw_material_code:clean(rawCode)||null,
@@ -37,7 +37,8 @@ function canonicalRow(row,headers,mapping,sheetName,rowNumber,fileType,defaultDi
     description:clean(read(row,headers,mapping,'description'))||null,
     part_number:clean(read(row,headers,mapping,'part_number'))||null,
     uom:clean(read(row,headers,mapping,'uom'))||null,
-    discipline:mappedDiscipline||disciplineValue(defaultDiscipline)||null,
+    discipline:mappedDiscipline||normalizeDiscipline(defaultDiscipline)||null,
+    raw_discipline:rawDiscipline&&!mappedDiscipline?rawDiscipline:null,
     required_qty:num(read(row,headers,mapping,'required_qty')),
     store_qty:num(read(row,headers,mapping,'store_qty')),
     pr_qty:num(read(row,headers,mapping,'pr_qty')),
@@ -80,7 +81,7 @@ function canonicalRow(row,headers,mapping,sheetName,rowNumber,fileType,defaultDi
     source_row:rowNumber,
     file_type:fileType
   };
-  const meaningful=Object.entries(out).some(([k,v])=>!['source_sheet','source_row','file_type','raw_material_code'].includes(k)&&v!==null&&v!=='');
+  const meaningful=Object.entries(out).some(([k,v])=>!['source_sheet','source_row','file_type','raw_material_code','raw_discipline'].includes(k)&&v!==null&&v!=='');
   return meaningful?out:null;
 }
 
@@ -116,7 +117,9 @@ export async function parseUniversalImport(buffer,defaultDiscipline=''){
     for(let i=h.index+1;i<grid.length;i++){
       const x=canonicalRow(grid[i],h.headers,mapping,sheetName,i+1,ai.analysis?.fileType||'unknown',defaultDiscipline);
       if(!x)continue;
+      const validation=validateCanonicalRow(x,{requiresMaterialCode:true});
       if(x.raw_material_code&&!x.material_code)issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code ignored: ${x.raw_material_code}`});
+      for(const reason of validation.filter(v=>!v.startsWith('Missing or invalid Material Code')))issues.push({sheet:sheetName,row:i+1,reason});
       rows.push(x);
     }
   }
