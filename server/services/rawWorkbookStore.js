@@ -3,7 +3,7 @@ import XLSX from 'xlsx';
 import {q,pool} from '../db.js';
 import {archiveObject} from '../storage/objectStorage.js';
 
-let enabledState=null;
+let enabledState=null,stagingState=null;
 const clean=v=>String(v??'').trim();
 const hash=v=>crypto.createHash('sha256').update(typeof v==='string'?v:JSON.stringify(v)).digest('hex');
 
@@ -11,6 +11,12 @@ export async function rawWorkbookStoreEnabled(){
   if(enabledState!==null)return enabledState;
   try{const r=await q(`SELECT to_regclass('public.raw_upload_batches') batches,to_regclass('public.raw_upload_rows') rows,to_regclass('public.ingestion_reviews') reviews`);enabledState=Boolean(r.rows[0]?.batches&&r.rows[0]?.rows&&r.rows[0]?.reviews)}catch{enabledState=false}
   return enabledState;
+}
+
+export async function canonicalStagingEnabled(){
+  if(stagingState!==null)return stagingState;
+  try{const r=await q(`SELECT to_regclass('public.ingestion_canonical_rows') rows,to_regclass('public.ingestion_human_reviews') human_reviews`);stagingState=Boolean(r.rows[0]?.rows&&r.rows[0]?.human_reviews)}catch{stagingState=false}
+  return stagingState;
 }
 
 export function inspectWorkbook(buffer){
@@ -35,17 +41,14 @@ export function inspectWorkbook(buffer){
 }
 
 export async function archiveRawWorkbook({file,sourceType='excel',uploadedBy=null,importHistoryId=null,metadata={}}){
-  const parsed=inspectWorkbook(file.buffer);
-  const contentHash=hash(file.buffer);
+  const parsed=inspectWorkbook(file.buffer),contentHash=hash(file.buffer);
   if(!await rawWorkbookStoreEnabled())return {enabled:false,batchId:null,contentHash,parsed,originalArchived:false};
   const archived=await archiveObject(file,{department_code:metadata.department_code||'',equipment:metadata.equipment||'',document_type:'raw-excel'});
   const client=await pool.connect();
   try{
     await client.query('BEGIN');
     const batch=(await client.query(`INSERT INTO raw_upload_batches(import_history_id,source_name,source_type,content_hash,workbook_meta,storage_provider,storage_bucket,storage_key,original_archived,status,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'received',$10) RETURNING id,uploaded_at`,[importHistoryId,file.originalname,sourceType,contentHash,JSON.stringify({sheet_names:parsed.sheet_names,total_rows:parsed.total_rows,sheets:parsed.sheets.map(s=>({name:s.name,header_row:s.header_row,headers:s.headers,row_count:s.rows.length})),...metadata}),archived.archived?archived.provider:'db-only',archived.bucket||null,archived.key||null,Boolean(archived.archived),uploadedBy])).rows[0];
-    for(const sheet of parsed.sheets){
-      for(const row of sheet.rows)await client.query(`INSERT INTO raw_upload_rows(batch_id,sheet_name,row_number,cells,row_object,row_hash) VALUES($1,$2,$3,$4,$5,$6)`,[batch.id,sheet.name,row.row_number,JSON.stringify(row.cells),row.row_object?JSON.stringify(row.row_object):null,row.row_hash]);
-    }
+    for(const sheet of parsed.sheets)for(const row of sheet.rows)await client.query(`INSERT INTO raw_upload_rows(batch_id,sheet_name,row_number,cells,row_object,row_hash) VALUES($1,$2,$3,$4,$5,$6)`,[batch.id,sheet.name,row.row_number,JSON.stringify(row.cells),row.row_object?JSON.stringify(row.row_object):null,row.row_hash]);
     await client.query('COMMIT');
     return {enabled:true,batchId:batch.id,uploadedAt:batch.uploaded_at,contentHash,parsed,originalArchived:Boolean(archived.archived),storageProvider:archived.archived?archived.provider:'db-only'};
   }catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}
@@ -55,6 +58,27 @@ export async function saveCanonicalPreview(batchId,preview){
   if(!batchId||!await rawWorkbookStoreEnabled())return false;
   await q(`UPDATE raw_upload_batches SET workbook_meta=COALESCE(workbook_meta,'{}'::jsonb) || jsonb_build_object('canonical_preview',$1::jsonb),updated_at=NOW() WHERE id=$2`,[JSON.stringify(preview||{}),batchId]);
   return true;
+}
+
+export async function stageCanonicalRows(batchId,fileType,rows=[]){
+  if(!batchId||!await canonicalStagingEnabled())return {enabled:false,stored:0};
+  const client=await pool.connect();
+  try{
+    await client.query('BEGIN');
+    await client.query('DELETE FROM ingestion_canonical_rows WHERE batch_id=$1',[batchId]);
+    let stored=0;
+    for(let i=0;i<rows.length;i++){
+      const row=rows[i]||{};
+      await client.query(`INSERT INTO ingestion_canonical_rows(batch_id,row_index,file_type,material_code,payload) VALUES($1,$2,$3,$4,$5)`,[batchId,i+1,fileType||'unknown',clean(row.material_code).toUpperCase()||null,JSON.stringify(row)]);stored++;
+    }
+    await client.query('COMMIT');return {enabled:true,stored};
+  }catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}
+}
+
+export async function getStagedCanonicalRows(batchId){
+  if(!await canonicalStagingEnabled())return {enabled:false,fileType:null,rows:[]};
+  const rows=(await q(`SELECT row_index,file_type,payload FROM ingestion_canonical_rows WHERE batch_id=$1 ORDER BY row_index`,[batchId])).rows;
+  return {enabled:true,fileType:rows[0]?.file_type||null,rows:rows.map(r=>r.payload)};
 }
 
 export async function saveIngestionReview({batchId,reviewType,decision,confidence=null,model=null,findings=[],summary=''}){
@@ -68,11 +92,12 @@ export async function markRawBatch(batchId,status,importHistoryId=null){
 }
 
 export async function getRawBatch(batchId,{page=1,pageSize=100}={}){
-  if(!await rawWorkbookStoreEnabled())return {enabled:false,batch:null,rows:[],pagination:null,reviews:[]};
-  const batch=(await q(`SELECT * FROM raw_upload_batches WHERE id=$1`,[batchId])).rows[0];if(!batch)return {enabled:true,batch:null,rows:[],pagination:null,reviews:[]};
+  if(!await rawWorkbookStoreEnabled())return {enabled:false,batch:null,rows:[],pagination:null,reviews:[],human_review:null};
+  const batch=(await q(`SELECT * FROM raw_upload_batches WHERE id=$1`,[batchId])).rows[0];if(!batch)return {enabled:true,batch:null,rows:[],pagination:null,reviews:[],human_review:null};
   const p=Math.max(Number(page)||1,1),ps=Math.min(Math.max(Number(pageSize)||100,10),500),offset=(p-1)*ps;
   const total=Number((await q(`SELECT COUNT(*)::int total FROM raw_upload_rows WHERE batch_id=$1`,[batchId])).rows[0]?.total||0);
   const rows=(await q(`SELECT id,sheet_name,row_number,cells,row_object,row_hash FROM raw_upload_rows WHERE batch_id=$1 ORDER BY sheet_name,row_number LIMIT $2 OFFSET $3`,[batchId,ps,offset])).rows;
   const reviews=(await q(`SELECT id,review_type,decision,confidence,model,findings,summary,created_at FROM ingestion_reviews WHERE batch_id=$1 ORDER BY created_at`,[batchId])).rows;
-  return {enabled:true,batch,rows,reviews,pagination:{page:p,page_size:ps,total,pages:Math.max(Math.ceil(total/ps),1)}};
+  let humanReview=null;if(await canonicalStagingEnabled())humanReview=(await q(`SELECT h.*,u.name reviewed_by_name FROM ingestion_human_reviews h LEFT JOIN users u ON u.id=h.reviewed_by WHERE h.batch_id=$1`,[batchId])).rows[0]||null;
+  return {enabled:true,batch,rows,reviews,human_review:humanReview,pagination:{page:p,page_size:ps,total,pages:Math.max(Math.ceil(total/ps),1)}};
 }
