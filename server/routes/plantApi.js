@@ -4,7 +4,7 @@ import {plantApiAuth,plantApiWrite,plantHumanReview} from '../plantApiAuth.js';
 import {plantApiStatus,plantMaterials,plantEquipment,plantHierarchy,plantProcurement,ingestPlantSnapshots} from '../services/plantDataApi.js';
 import {processPlantExcel} from '../services/plantExcelGateway.js';
 import {getRawBatch} from '../services/rawWorkbookStore.js';
-import {listReviewQueue,reviewQueueStatus,decideIngestionBatch} from '../services/ingestionReviewQueue.js';
+import {listReviewQueue,reviewQueueStatus,commitReviewedBatch,decideIngestionBatch} from '../services/ingestionReviewQueue.js';
 
 const r=Router();
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:15*1024*1024}});
@@ -27,6 +27,11 @@ r.post('/snapshots',plantApiWrite,async(req,res)=>{
 r.post('/excel',plantApiWrite,upload.single('file'),async(req,res)=>{
   if(!req.file)return res.status(400).json({error:'Excel file is required'});
   const out=await processPlantExcel({file:req.file,mode:req.body.mode||'review',defaultDiscipline:req.body.discipline||'',departmentCode:req.body.department_code||'',equipment:req.body.equipment||'',principal:req.apiPrincipal?.name||'unknown',userId:req.user?.id||null});
+  res.json(out);
+});
+
+r.post('/reviews/:batchId/commit',plantApiWrite,async(req,res)=>{
+  const out=await commitReviewedBatch({batchId:req.params.batchId,principal:req.apiPrincipal?.name||'unknown',userId:req.user?.id||null});
   res.json(out);
 });
 
