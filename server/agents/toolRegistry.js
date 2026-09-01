@@ -1,5 +1,6 @@
 import {materialRows,codeFrom,num,safeText} from '../services/materialQuery.js';
 import {getMaterialImportHistory} from '../services/materialHistory.js';
+import {getMaterialEvents} from '../services/materialEvents.js';
 import {searchKnowledge} from '../services/knowledge.js';
 
 const sapGlossary={
@@ -22,7 +23,7 @@ const sapGlossary={
 
 export const toolDefinitions=[
   {type:'function',function:{name:'get_material_profile',description:'Get the authoritative current profile for one spare by Material Code, including requirement, store, PR, PO, gap, locations and spare character.',parameters:{type:'object',properties:{material_code:{type:'string'}},required:['material_code'],additionalProperties:false}}},
-  {type:'function',function:{name:'get_material_history',description:'Get dated Excel/SAP import-change history for one Material Code. This is not consumption/failure history unless an uploaded source explicitly says so.',parameters:{type:'object',properties:{material_code:{type:'string'},limit:{type:'integer',minimum:1,maximum:50}},required:['material_code'],additionalProperties:false}}},
+  {type:'function',function:{name:'get_material_history',description:'Get dated material events when the structured event store is enabled, otherwise fall back to Excel/SAP import-change history. Never treat snapshots as consumption/failure history unless the source explicitly says so.',parameters:{type:'object',properties:{material_code:{type:'string'},limit:{type:'integer',minimum:1,maximum:50}},required:['material_code'],additionalProperties:false}}},
   {type:'function',function:{name:'search_knowledge',description:'Search uploaded manuals, OEM catalogues, datasheets, repair reports and other indexed engineering evidence. Use before making a document-specific/OEM-specific claim.',parameters:{type:'object',properties:{query:{type:'string'},material_code:{type:'string'},equipment:{type:'string'},sub_equipment:{type:'string'},discipline:{type:'string'},limit:{type:'integer',minimum:1,maximum:12}},required:['query'],additionalProperties:false}}},
   {type:'function',function:{name:'find_pr_eligible_spares',description:'Find spares whose current stock plus open PR plus open PO does not cover the recorded required quantity.',parameters:{type:'object',properties:{equipment:{type:'string'},sub_equipment:{type:'string'},discipline:{type:'string'},limit:{type:'integer',minimum:1,maximum:50}},additionalProperties:false}}},
   {type:'function',function:{name:'find_zero_stock_spares',description:'Find zero-stock spares, optionally only those without an open PO.',parameters:{type:'object',properties:{without_po:{type:'boolean'},equipment:{type:'string'},sub_equipment:{type:'string'},limit:{type:'integer',minimum:1,maximum:50}},additionalProperties:false}}},
@@ -37,7 +38,11 @@ export const toolDefinitions=[
 
 export async function executeTool(name,args={},context={}){
   if(name==='get_material_profile')return {rows:await materialRows(context,{material_code:args.material_code,limit:5})};
-  if(name==='get_material_history')return getMaterialImportHistory(args.material_code,args.limit||20);
+  if(name==='get_material_history'){
+    const structured=await getMaterialEvents(args.material_code,args.limit||20);
+    if(structured.enabled)return {...structured,source:'material_events',warning:'Inventory/PR/PO snapshots are not consumption or failure events.'};
+    return {...await getMaterialImportHistory(args.material_code,args.limit||20),source:'import_history_fallback',note:structured.note};
+  }
   if(name==='search_knowledge')return {hits:await searchKnowledge(args.query,{...context,material_code:args.material_code||codeFrom(args.query),equipment:args.equipment||context.equipment,sub_equipment:args.sub_equipment||context.sub_equipment,discipline:args.discipline||context.discipline},args.limit||6)};
   if(name==='find_pr_eligible_spares')return {rows:await materialRows(context,{...args,pr_eligible:true,limit:args.limit||20})};
   if(name==='find_zero_stock_spares')return {rows:await materialRows(context,{...args,zero_stock:true,no_po:Boolean(args.without_po),limit:args.limit||20})};
