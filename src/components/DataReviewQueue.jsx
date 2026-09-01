@@ -1,0 +1,28 @@
+import React,{useEffect,useState} from 'react';
+import {request} from '../api/client.js';
+
+const badge=x=><span className={`reviewBadge ${x==='accept'||x==='approve'?'ok':x==='reject'?'bad':'warn'}`}>{x||'—'}</span>;
+
+export default function DataReviewQueue({refreshToken=0,setNotice}){
+  const[rows,setRows]=useState([]),[paging,setPaging]=useState({page:1,pages:1,total:0}),[page,setPage]=useState(1),[busy,setBusy]=useState(null),[selected,setSelected]=useState(null),[raw,setRaw]=useState(null),[note,setNote]=useState('');
+  const load=async(target=page)=>{try{const x=await request('/v1/plant/reviews?'+new URLSearchParams({status:'reviewed',page:String(target),page_size:'20'}));setRows(x.rows||[]);setPaging(x.pagination||{page:1,pages:1,total:0})}catch(e){if(!String(e.message).includes('migration'))setNotice(e.message)}};
+  useEffect(()=>{load(page)},[page,refreshToken]);
+  const inspect=async row=>{setSelected(row);setRaw(null);try{setRaw(await request(`/v1/plant/raw/${row.id}?page=1&page_size=30`))}catch(e){setNotice(e.message)}};
+  const decide=async decision=>{if(!selected)return;setBusy(decision);try{const x=await request(`/v1/plant/reviews/${selected.id}/decision`,{method:'POST',body:JSON.stringify({decision,note})});setNotice(decision==='approve'?`Batch ${selected.id} approved and ${x.committed?'committed':'processed'}.`:`Batch ${selected.id} rejected.`);setSelected(null);setRaw(null);setNote('');await load(page)}catch(e){setNotice(e.message)}finally{setBusy(null)}};
+  const findings=[...(selected?.deterministic_review?.findings||[]),...(selected?.llm_review?.findings||[])];
+  return <section className="reviewQueue">
+    <div className="pageTitle"><div><h2>Data Review Queue</h2><p>Only batches with valid hard rules but unresolved semantic review should wait here. Human approval never bypasses deterministic validation.</p></div><div><strong>{paging.total||0}</strong> pending</div></div>
+    {!rows.length?<div className="emptyState"><h3>No pending review batches</h3><p>When an Excel mapping is uncertain, it will appear here with raw evidence and AI findings.</p></div>:<div className="tableWrap"><table><thead><tr><th>Date</th><th>File</th><th>Type</th><th>Raw rows</th><th>Rules</th><th>LLM</th><th>Archive</th><th></th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{new Date(r.uploaded_at).toLocaleString()}</td><td>{r.source_name}</td><td>{r.workbook_meta?.canonical_preview?.file_type||'—'}</td><td>{r.workbook_meta?.total_rows??'—'}</td><td>{badge(r.deterministic_review?.decision)}</td><td>{badge(r.llm_review?.decision)} {r.llm_review?.confidence!=null&&<small>{Math.round(Number(r.llm_review.confidence)*100)}%</small>}</td><td>{r.original_archived?'Archived':'DB evidence'}</td><td><button className="link" onClick={()=>inspect(r)}>Review</button></td></tr>)}</tbody></table></div>}
+    {paging.pages>1&&<div className="pagination"><span>{paging.total} batches</span><div><button className="secondary" disabled={page<=1} onClick={()=>setPage(x=>x-1)}>Previous</button><span> Page {paging.page} / {paging.pages} </span><button className="secondary" disabled={page>=paging.pages} onClick={()=>setPage(x=>x+1)}>Next</button></div></div>}
+    {selected&&<div className="reviewPanel">
+      <div className="pageTitle"><div><h3>{selected.source_name}</h3><p>Batch #{selected.id} · {selected.workbook_meta?.canonical_preview?.file_type||'Unknown type'}</p></div><button className="ghost" onClick={()=>{setSelected(null);setRaw(null)}}>Close</button></div>
+      <div className="cards"><div className="card"><strong>{selected.deterministic_review?.decision||'—'}</strong><span>Deterministic</span></div><div className="card"><strong>{selected.llm_review?.decision||'—'}</strong><span>LLM semantic review</span></div><div className="card"><strong>{selected.llm_review?.confidence!=null?`${Math.round(Number(selected.llm_review.confidence)*100)}%`:'—'}</strong><span>LLM confidence</span></div><div className="card"><strong>{selected.workbook_meta?.canonical_preview?.row_count??'—'}</strong><span>Canonical rows</span></div></div>
+      <div className="fileHelp"><strong>Rule review</strong><span>{selected.deterministic_review?.summary||'—'}</span></div>
+      <div className="fileHelp"><strong>LLM review</strong><span>{selected.llm_review?.summary||'—'}</span></div>
+      {findings.length>0&&<div className="reviewFindings">{findings.slice(0,30).map((f,i)=><div key={i}><strong>{f.severity||'warning'} · {f.code||'REVIEW'}</strong><span>{f.material_code?`${f.material_code} · `:''}{f.message||''}</span></div>)}</div>}
+      {raw?.rows?.length>0&&<><h3>Original Excel evidence</h3><div className="tableWrap"><table><thead><tr><th>Sheet</th><th>Row</th><th>Original values</th></tr></thead><tbody>{raw.rows.map(r=><tr key={r.id}><td>{r.sheet_name}</td><td>{r.row_number}</td><td className="smallcode">{JSON.stringify(r.row_object||r.cells)}</td></tr>)}</tbody></table></div><p className="muted">Showing first {raw.rows.length} of {raw.pagination?.total||raw.rows.length} stored raw rows.</p></>}
+      <label className="block">Planner note<input style={{width:'100%',height:42,marginTop:6}} value={note} onChange={e=>setNote(e.target.value)} placeholder="Why are you approving or rejecting this mapping?"/></label>
+      <div className="actions"><button className="secondary" disabled={Boolean(busy)} onClick={()=>decide('reject')}>{busy==='reject'?'Rejecting…':'Reject Batch'}</button><button disabled={Boolean(busy)||selected.deterministic_review?.decision==='reject'} onClick={()=>decide('approve')}>{busy==='approve'?'Revalidating & committing…':'Approve & Commit'}</button></div>
+    </div>}
+  </section>;
+}
