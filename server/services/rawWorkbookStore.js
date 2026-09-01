@@ -51,6 +51,12 @@ export async function archiveRawWorkbook({file,sourceType='excel',uploadedBy=nul
   }catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}
 }
 
+export async function saveCanonicalPreview(batchId,preview){
+  if(!batchId||!await rawWorkbookStoreEnabled())return false;
+  await q(`UPDATE raw_upload_batches SET workbook_meta=COALESCE(workbook_meta,'{}'::jsonb) || jsonb_build_object('canonical_preview',$1::jsonb),updated_at=NOW() WHERE id=$2`,[JSON.stringify(preview||{}),batchId]);
+  return true;
+}
+
 export async function saveIngestionReview({batchId,reviewType,decision,confidence=null,model=null,findings=[],summary=''}){
   if(!batchId||!await rawWorkbookStoreEnabled())return null;
   return (await q(`INSERT INTO ingestion_reviews(batch_id,review_type,decision,confidence,model,findings,summary) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,created_at`,[batchId,reviewType,decision,confidence,model,JSON.stringify(findings||[]),summary||null])).rows[0];
