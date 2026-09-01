@@ -39,7 +39,7 @@ export function normalizeDiscipline(v){
 export function validateCanonicalRow(row,{requiresMaterialCode=true}={}){
   const issues=[];
   if(requiresMaterialCode&&!row.material_code)issues.push('Missing or invalid Material Code');
-  if(row.raw_discipline&&!row.discipline)issues.push(`Unknown Discipline: ${row.raw_discipline}`);
+  if(row.raw_discipline)issues.push(`Unknown Discipline: ${row.raw_discipline}`);
   for(const field of [...CANONICAL_IMPORT_FIELDS.inventory,...CANONICAL_IMPORT_FIELDS.procurement.filter(x=>!['tracking_id','pr_number','pr_item','po_number','pr_raised_date','po_raised_date','justification'].includes(x)),...CANONICAL_IMPORT_FIELDS.consumption.filter(x=>x!=='last_issue_date')]){
     const v=row[field];if(v!==null&&v!==undefined&&!Number.isFinite(Number(v)))issues.push(`Invalid numeric value for ${field}`);
   }
