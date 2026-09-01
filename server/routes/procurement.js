@@ -1,14 +1,13 @@
 import {Router} from 'express';
 import {auth} from '../auth.js';
 import {providerConfig,callChatModel} from '../ai/provider.js';
-import {procurementCandidates,procurementSnapshot,deterministicScreen,cleanProcurementText} from '../services/procurementService.js';
+import {procurementCandidates,procurementPage,deterministicScreen,cleanProcurementText} from '../services/procurementService.js';
 import {getProcurementHistory,procurementEventsAvailable} from '../services/procurementEvents.js';
 
 const r=Router();
 
 r.get('/procurement',auth,async(req,res)=>{
-  const {department_code='',area='',type='po',search=''}=req.query;
-  res.json(await procurementSnapshot({department_code,area,type,search}));
+  res.json(await procurementPage(req.query));
 });
 
 r.get('/procurement/history/:materialCode',auth,async(req,res)=>{
