@@ -16,7 +16,7 @@ function findHeaderIndex(rows,mapping={}){
   let best={index:0,score:-1,headers:[]};
   for(let i=0;i<Math.min(rows.length,80);i++){
     const headers=rows[i].map(clean);
-    const score=headers.reduce((n,h)=>n+(wanted.has(norm(h))?1:0),0);
+    const score=headers.reduce((n,h)=>n+(wanted.has(norm(h))?1:0),0;
     if(score>best.score)best={index:i,score,headers};
   }
   return best;
@@ -120,7 +120,9 @@ export async function parseUniversalImport(buffer,defaultDiscipline=''){
   const global=ai.analysis?.mappings||{},proposedBySheet=ai.analysis?.sheetMappings||ai.analysis?.mappingsBySheet||{};
   for(const sheetName of wb.SheetNames){
     const sheetSummary=ai.summary?.sheets?.find(s=>s.name===sheetName)||{name:sheetName,rows:[]};
-    const mapping={...localSheetMapping(sheetSummary),...global,...(proposedBySheet?.[sheetName]||{})};
+    const deterministic=localSheetMapping(sheetSummary);
+    // AI may fill unknown fields, but known deterministic SAP/header mappings always win.
+    const mapping={...global,...(proposedBySheet?.[sheetName]||{}),...deterministic};
     sheetMappings[sheetName]=mapping;
     const grid=rowObjects(wb.Sheets[sheetName]),h=findHeaderIndex(grid,mapping);
     if(columnIndex(h.headers,mapping.material_code)<0){issues.push({sheet:sheetName,reason:'No Material Code mapping available',headers:h.headers.filter(Boolean)});continue}
