@@ -55,6 +55,8 @@ export async function analyzeImport(buffer){
     const headers={'Content-Type':'application/json','Authorization':`Bearer ${cfg.key}`};if(cfg.openrouter){headers['HTTP-Referer']=process.env.APP_PUBLIC_URL||'https://plant-spare-dashboard.onrender.com';headers['X-Title']='Plant Spare Dashboard - AI Import'}
     const resp=await fetch(`${cfg.base}/chat/completions`,{method:'POST',headers,body:JSON.stringify({model:cfg.model,messages:[{role:'system',content:'You are a cautious industrial schema-mapping agent. Return JSON only. Never invent values. Prefer blank over a wrong field mapping.'},{role:'user',content:prompt}],temperature:0.1,response_format:{type:'json_object'}})});
     if(!resp.ok)throw new Error(`AI provider returned ${resp.status}`);const body=await resp.json(),parsed=parseJson(body?.choices?.[0]?.message?.content);if(!parsed)throw new Error('AI response was not valid JSON');
-    return {aiEnabled:true,analysis:{...fallback,...parsed,source:'ai',sheetMappings:{...fallback.sheetMappings,...(parsed.sheetMappings||{})}},fallback,summary};
+    const lockTyped=['stock','open_pr','open_po'].includes(fallback.fileType);
+    const fileType=lockTyped?fallback.fileType:(parsed.fileType||fallback.fileType);
+    return {aiEnabled:true,analysis:{...fallback,...parsed,fileType,source:lockTyped?'deterministic-type+ai-review':'ai',sheetMappings:{...fallback.sheetMappings,...(parsed.sheetMappings||{})}},fallback,summary};
   }catch(error){return {aiEnabled:false,analysis:fallback,summary,warning:`AI provider unavailable: ${error.message}`}}
 }
