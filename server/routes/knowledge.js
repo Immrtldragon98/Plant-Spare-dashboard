@@ -4,6 +4,7 @@ import {auth,allow} from '../auth.js';
 import {listKnowledgeDocuments,saveKnowledgeDocument,searchKnowledge,knowledgeStatus} from '../services/knowledge.js';
 import {getKnowledgePage} from '../services/knowledgeCatalog.js';
 import {beginIngestionJob,completeIngestionJob,failIngestionJob,listIngestionJobs,getIngestionJob} from '../services/ingestionJobs.js';
+import {getEquipmentKnowledge,getComponentDetail,createEquipmentComponent,linkComponentMaterial,linkComponentDocument} from '../services/equipmentKnowledge.js';
 
 const r=Router();
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:20*1024*1024}});
@@ -12,6 +13,11 @@ r.get('/knowledge/status',auth,async(req,res)=>res.json(await knowledgeStatus())
 r.get('/knowledge/jobs',auth,allow('planner','admin'),async(req,res)=>res.json(await listIngestionJobs(req.query.limit)));
 r.get('/knowledge/jobs/:id',auth,allow('planner','admin'),async(req,res)=>res.json(await getIngestionJob(req.params.id)));
 r.get('/knowledge/page',auth,async(req,res)=>res.json(await getKnowledgePage(req.query)));
+r.get('/knowledge/equipment',auth,async(req,res)=>res.json(await getEquipmentKnowledge(req.query)));
+r.get('/knowledge/components/:id',auth,async(req,res)=>res.json(await getComponentDetail(req.params.id)));
+r.post('/knowledge/components',auth,allow('planner','admin'),async(req,res)=>res.json({ok:true,component:await createEquipmentComponent(req.body||{},req.user.id)}));
+r.post('/knowledge/components/:id/materials',auth,allow('planner','admin'),async(req,res)=>res.json({ok:true,link:await linkComponentMaterial({component_id:req.params.id,...(req.body||{})},req.user.id)}));
+r.post('/knowledge/components/:id/documents',auth,allow('planner','admin'),async(req,res)=>res.json({ok:true,link:await linkComponentDocument({component_id:req.params.id,...(req.body||{})},req.user.id)}));
 
 r.get('/knowledge',auth,async(req,res)=>{
   res.json(await listKnowledgeDocuments(req.query.limit));
