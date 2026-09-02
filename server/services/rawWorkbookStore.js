@@ -6,6 +6,7 @@ import {archiveObject} from '../storage/objectStorage.js';
 let enabledState=null,stagingState=null;
 const clean=v=>String(v??'').trim();
 const hash=v=>crypto.createHash('sha256').update(typeof v==='string'?v:JSON.stringify(v)).digest('hex');
+const chunks=(items,size=250)=>{const out=[];for(let i=0;i<items.length;i+=size)out.push(items.slice(i,i+size));return out};
 
 export async function rawWorkbookStoreEnabled(){
   if(enabledState!==null)return enabledState;
@@ -48,7 +49,13 @@ export async function archiveRawWorkbook({file,sourceType='excel',uploadedBy=nul
   try{
     await client.query('BEGIN');
     const batch=(await client.query(`INSERT INTO raw_upload_batches(import_history_id,source_name,source_type,content_hash,workbook_meta,storage_provider,storage_bucket,storage_key,original_archived,status,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'received',$10) RETURNING id,uploaded_at`,[importHistoryId,file.originalname,sourceType,contentHash,JSON.stringify({sheet_names:parsed.sheet_names,total_rows:parsed.total_rows,sheets:parsed.sheets.map(s=>({name:s.name,header_row:s.header_row,headers:s.headers,row_count:s.rows.length})),...metadata}),archived.archived?archived.provider:'db-only',archived.bucket||null,archived.key||null,Boolean(archived.archived),uploadedBy])).rows[0];
-    for(const sheet of parsed.sheets)for(const row of sheet.rows)await client.query(`INSERT INTO raw_upload_rows(batch_id,sheet_name,row_number,cells,row_object,row_hash) VALUES($1,$2,$3,$4,$5,$6)`,[batch.id,sheet.name,row.row_number,JSON.stringify(row.cells),row.row_object?JSON.stringify(row.row_object):null,row.row_hash]);
+    const flat=[];
+    for(const sheet of parsed.sheets)for(const row of sheet.rows)flat.push({sheet_name:sheet.name,row_number:row.row_number,cells:row.cells,row_object:row.row_object,row_hash:row.row_hash});
+    for(const part of chunks(flat,250)){
+      await client.query(`INSERT INTO raw_upload_rows(batch_id,sheet_name,row_number,cells,row_object,row_hash)
+        SELECT $1,x.sheet_name,x.row_number,x.cells,x.row_object,x.row_hash
+        FROM jsonb_to_recordset($2::jsonb) AS x(sheet_name text,row_number int,cells jsonb,row_object jsonb,row_hash text)`,[batch.id,JSON.stringify(part)]);
+    }
     await client.query('COMMIT');
     return {enabled:true,batchId:batch.id,uploadedAt:batch.uploaded_at,contentHash,parsed,originalArchived:Boolean(archived.archived),storageProvider:archived.archived?archived.provider:'db-only'};
   }catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}
@@ -66,12 +73,13 @@ export async function stageCanonicalRows(batchId,fileType,rows=[]){
   try{
     await client.query('BEGIN');
     await client.query('DELETE FROM ingestion_canonical_rows WHERE batch_id=$1',[batchId]);
-    let stored=0;
-    for(let i=0;i<rows.length;i++){
-      const row=rows[i]||{};
-      await client.query(`INSERT INTO ingestion_canonical_rows(batch_id,row_index,file_type,material_code,payload) VALUES($1,$2,$3,$4,$5)`,[batchId,i+1,fileType||'unknown',clean(row.material_code).toUpperCase()||null,JSON.stringify(row)]);stored++;
+    const prepared=(rows||[]).map((row,i)=>({row_index:i+1,file_type:fileType||'unknown',material_code:clean(row?.material_code).toUpperCase()||null,payload:row||{}}));
+    for(const part of chunks(prepared,250)){
+      await client.query(`INSERT INTO ingestion_canonical_rows(batch_id,row_index,file_type,material_code,payload)
+        SELECT $1,x.row_index,x.file_type,x.material_code,x.payload
+        FROM jsonb_to_recordset($2::jsonb) AS x(row_index int,file_type text,material_code text,payload jsonb)`,[batchId,JSON.stringify(part)]);
     }
-    await client.query('COMMIT');return {enabled:true,stored};
+    await client.query('COMMIT');return {enabled:true,stored:prepared.length};
   }catch(error){await client.query('ROLLBACK');throw error}finally{client.release()}
 }
 
