@@ -31,7 +31,8 @@ function localSheetMapping(sheetSummary){
 
 export async function parseUniversalImport(buffer,defaultDiscipline=''){
   const ai=await analyzeImport(buffer),wb=XLSX.read(buffer,{type:'buffer'}),rows=[],issues=[],sheetMappings={},sheetHeaders={},mappingMemory=[];
-  const fileType=ai.analysis?.fileType||'unknown',global=ai.analysis?.mappings||{},proposedBySheet=ai.analysis?.sheetMappings||ai.analysis?.mappingsBySheet||{};
+  const fileType=ai.analysis?.fileType||'unknown',transactionMode=['stock','open_pr','open_po'].includes(fileType),global=ai.analysis?.mappings||{},proposedBySheet=ai.analysis?.sheetMappings||ai.analysis?.mappingsBySheet||{};
+  let skippedInvalidCodes=0;
   for(const sheetName of wb.SheetNames){
     const sheetSummary=ai.summary?.sheets?.find(s=>s.name===sheetName)||{name:sheetName,rows:[]},fallback=localSheetMapping(sheetSummary),grid=rowObjects(wb.Sheets[sheetName]);
     const provisional={...fallback,...global,...(proposedBySheet?.[sheetName]||{})},provisionalHeader=findHeaderIndex(grid,provisional);
@@ -39,8 +40,15 @@ export async function parseUniversalImport(buffer,defaultDiscipline=''){
     const mapping={...fallback,...global,...(proposedBySheet?.[sheetName]||{}),...(learned?.mapping||{})},h=findHeaderIndex(grid,mapping);
     sheetMappings[sheetName]=mapping;sheetHeaders[sheetName]=h.headers;if(learned)mappingMemory.push({sheet:sheetName,memory_id:learned.memory_id,source:learned.source});
     if(columnIndex(h.headers,mapping.material_code)<0){issues.push({sheet:sheetName,reason:'No Material Code mapping available',headers:h.headers.filter(Boolean)});continue}
-    for(let i=h.index+1;i<grid.length;i++){const x=canonicalRow(grid[i],h.headers,mapping,sheetName,i+1,fileType,defaultDiscipline);if(!x)continue;const validation=validateCanonicalRow(x,{requiresMaterialCode:true});if(x.raw_material_code&&!x.material_code)issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code ignored: ${x.raw_material_code}`});for(const reason of validation.filter(v=>!v.startsWith('Missing or invalid Material Code')))issues.push({sheet:sheetName,row:i+1,reason});rows.push(x)}
+    for(let i=h.index+1;i<grid.length;i++){
+      const x=canonicalRow(grid[i],h.headers,mapping,sheetName,i+1,fileType,defaultDiscipline);if(!x)continue;
+      if(transactionMode&&!x.material_code){skippedInvalidCodes++;continue}
+      const validation=validateCanonicalRow(x,{requiresMaterialCode:!transactionMode});
+      if(!transactionMode&&x.raw_material_code&&!x.material_code)issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code ignored: ${x.raw_material_code}`});
+      for(const reason of validation.filter(v=>!v.startsWith('Missing or invalid Material Code')))issues.push({sheet:sheetName,row:i+1,reason});
+      rows.push(x)
+    }
   }
   const source=mappingMemory.length?'mapping-memory':(ai.aiEnabled?'llm-mapping':'fallback-mapping');
-  return {fileType,confidence:ai.analysis?.confidence??null,aiEnabled:ai.aiEnabled,source,rows,issues,sheetMappings,sheetHeaders,mappingMemory,analysis:ai.analysis};
+  return {fileType,confidence:ai.analysis?.confidence??null,aiEnabled:ai.aiEnabled,source,rows,issues,skippedInvalidCodes,sheetMappings,sheetHeaders,mappingMemory,analysis:ai.analysis};
 }
