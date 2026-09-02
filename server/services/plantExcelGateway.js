@@ -45,14 +45,14 @@ export async function processPlantExcel({file,mode='review',defaultDiscipline=''
   let staging={enabled:false,stored:0};
 
   if(raw.batchId){
-    await saveCanonicalPreview(raw.batchId,{file_type:parsed.fileType,row_count:parsed.rows.length,source:parsed.source,confidence:parsed.confidence,ai_enabled:parsed.aiEnabled,department_code:departmentCode,equipment,sheet_headers:parsed.sheetHeaders||{},sheet_mappings:parsed.sheetMappings||{},mapping_memory:parsed.mappingMemory||[],material_matches:materialMatches});
+    await saveCanonicalPreview(raw.batchId,{file_type:parsed.fileType,row_count:parsed.rows.length,source:parsed.source,confidence:parsed.confidence,ai_enabled:parsed.aiEnabled,department_code:departmentCode,equipment,sheet_headers:parsed.sheetHeaders||{},sheet_mappings:parsed.sheetMappings||{},mapping_memory:parsed.mappingMemory||[],material_matches:materialMatches,skipped_invalid_codes:parsed.skippedInvalidCodes||0});
     staging=await stageCanonicalRows(raw.batchId,parsed.fileType,parsed.rows||[]);
     await saveIngestionReview({batchId:raw.batchId,reviewType:'deterministic',decision:deterministic.decision,findings:deterministic.findings,summary:deterministic.summary});
     await markRawBatch(raw.batchId,'reviewed');
   }
 
   const mapping={source:parsed.source,confidence:parsed.confidence,memory_used:(parsed.mappingMemory||[]).length>0,ai_used:Boolean(parsed.aiEnabled)};
-  const base={ok:true,mode:normalizedMode,raw_store:{enabled:raw.enabled,batch_id:raw.batchId,content_hash:raw.contentHash,total_raw_rows:raw.parsed.total_rows,original_archived:raw.originalArchived,storage_provider:raw.storageProvider||'none'},canonical:{file_type:parsed.fileType,rows:parsed.rows.length,aggregated_materials:aggregated.length,source:parsed.source,confidence:parsed.confidence,ai_enabled:parsed.aiEnabled,mapping_memory:parsed.mappingMemory||[],material_matches:materialMatches,staged:staging,sample:parsed.rows.slice(0,20)},review:{deterministic,mapping}};
+  const base={ok:true,mode:normalizedMode,raw_store:{enabled:raw.enabled,batch_id:raw.batchId,content_hash:raw.contentHash,total_raw_rows:raw.parsed.total_rows,original_archived:raw.originalArchived,storage_provider:raw.storageProvider||'none'},canonical:{file_type:parsed.fileType,rows:parsed.rows.length,skipped_invalid_codes:parsed.skippedInvalidCodes||0,aggregated_materials:aggregated.length,source:parsed.source,confidence:parsed.confidence,ai_enabled:parsed.aiEnabled,mapping_memory:parsed.mappingMemory||[],material_matches:materialMatches,staged:staging,sample:parsed.rows.slice(0,20)},review:{deterministic,mapping}};
 
   if(normalizedMode==='review')return base;
   if(!await rawWorkbookStoreEnabled())throw new Error('Commit refused: raw evidence storage is not active.');
