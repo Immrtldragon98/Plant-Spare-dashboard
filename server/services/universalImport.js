@@ -33,13 +33,14 @@ export async function parseUniversalImport(buffer,defaultDiscipline=''){
   const ai=await analyzeImport(buffer),wb=XLSX.read(buffer,{type:'buffer'}),rows=[],issues=[],sheetMappings={},sheetHeaders={},mappingMemory=[];
   const fileType=ai.analysis?.fileType||'unknown',global=ai.analysis?.mappings||{},proposedBySheet=ai.analysis?.sheetMappings||ai.analysis?.mappingsBySheet||{};
   for(const sheetName of wb.SheetNames){
-    const sheetSummary=ai.summary?.sheets?.find(s=>s.name===sheetName)||{name:sheetName,rows:[]},deterministic=localSheetMapping(sheetSummary),grid=rowObjects(wb.Sheets[sheetName]);
-    const provisional={...global,...(proposedBySheet?.[sheetName]||{}),...deterministic},provisionalHeader=findHeaderIndex(grid,provisional);
+    const sheetSummary=ai.summary?.sheets?.find(s=>s.name===sheetName)||{name:sheetName,rows:[]},fallback=localSheetMapping(sheetSummary),grid=rowObjects(wb.Sheets[sheetName]);
+    const provisional={...fallback,...global,...(proposedBySheet?.[sheetName]||{})},provisionalHeader=findHeaderIndex(grid,provisional);
     const learned=await getApprovedMapping({fileType,sheetName,headers:provisionalHeader.headers});
-    const mapping={...global,...(proposedBySheet?.[sheetName]||{}),...(learned?.mapping||{}),...deterministic},h=findHeaderIndex(grid,mapping);
+    const mapping={...fallback,...global,...(proposedBySheet?.[sheetName]||{}),...(learned?.mapping||{})},h=findHeaderIndex(grid,mapping);
     sheetMappings[sheetName]=mapping;sheetHeaders[sheetName]=h.headers;if(learned)mappingMemory.push({sheet:sheetName,memory_id:learned.memory_id,source:learned.source});
     if(columnIndex(h.headers,mapping.material_code)<0){issues.push({sheet:sheetName,reason:'No Material Code mapping available',headers:h.headers.filter(Boolean)});continue}
     for(let i=h.index+1;i<grid.length;i++){const x=canonicalRow(grid[i],h.headers,mapping,sheetName,i+1,fileType,defaultDiscipline);if(!x)continue;const validation=validateCanonicalRow(x,{requiresMaterialCode:true});if(x.raw_material_code&&!x.material_code)issues.push({sheet:sheetName,row:i+1,reason:`Invalid Material Code ignored: ${x.raw_material_code}`});for(const reason of validation.filter(v=>!v.startsWith('Missing or invalid Material Code')))issues.push({sheet:sheetName,row:i+1,reason});rows.push(x)}
   }
-  return {fileType,confidence:ai.analysis?.confidence??null,aiEnabled:ai.aiEnabled,source:mappingMemory.length?'approved-memory+rules':(ai.analysis?.source||'deterministic'),rows,issues,sheetMappings,sheetHeaders,mappingMemory,analysis:ai.analysis};
+  const source=mappingMemory.length?'mapping-memory':(ai.aiEnabled?'llm-mapping':'fallback-mapping');
+  return {fileType,confidence:ai.analysis?.confidence??null,aiEnabled:ai.aiEnabled,source,rows,issues,sheetMappings,sheetHeaders,mappingMemory,analysis:ai.analysis};
 }
