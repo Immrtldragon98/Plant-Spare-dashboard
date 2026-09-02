@@ -1,3 +1,4 @@
+import {q} from '../db.js';
 import {parseUniversalImport} from './universalImport.js';
 import {archiveRawWorkbook,saveCanonicalPreview,stageCanonicalRows,saveIngestionReview,markRawBatch,rawWorkbookStoreEnabled,canonicalStagingEnabled} from './rawWorkbookStore.js';
 import {rememberBatchMappings} from './importMappingMemory.js';
@@ -20,6 +21,14 @@ export function snapshotRowsFromCanonical(fileType,rows=[]){
   return [...byMaterial.values()].map(x=>({material_code:x.material_code,store_qty:fileType==='stock'?x.quantity:null,pr_qty:fileType==='open_pr'?x.quantity:null,po_qty:fileType==='open_po'?x.quantity:null,vendor:fileType==='open_po'?x.vendor:null,metadata:{aggregated:true,line_count:x.line_count,documents:[...x.documents].slice(0,50),source_rows:x.source_rows}}));
 }
 
+async function matchExistingMaterials(rows=[]){
+  const codes=[...new Set(rows.map(r=>clean(r.material_code).toUpperCase()).filter(Boolean))];
+  if(!codes.length)return {total_codes:0,matched:0,missing:0,missing_codes:[]};
+  const found=(await q(`SELECT upper(material_code) code FROM materials WHERE active=true AND upper(material_code)=ANY($1::text[])`,[codes])).rows.map(r=>r.code);
+  const set=new Set(found),missing=codes.filter(c=>!set.has(c));
+  return {total_codes:codes.length,matched:found.length,missing:missing.length,missing_codes:missing.slice(0,50)};
+}
+
 async function learnCommittedMapping(parsed,batchId,userId,source){
   if(!batchId||!parsed?.sheetMappings)return {enabled:false,saved:0};
   return rememberBatchMappings({batchId,fileType:parsed.fileType,sheetHeaders:parsed.sheetHeaders||{},sheetMappings:parsed.sheetMappings||{},userId,source});
@@ -31,18 +40,19 @@ export async function processPlantExcel({file,mode='review',defaultDiscipline=''
   const raw=await archiveRawWorkbook({file,sourceType:'plant-api-excel',uploadedBy:userId,metadata:{department_code:departmentCode,equipment,principal}});
   const parsed=await parseUniversalImport(file.buffer,defaultDiscipline||'');
   const deterministic=deterministicTransactionReview(parsed);
+  const aggregated=['stock','open_pr','open_po'].includes(parsed.fileType)?snapshotRowsFromCanonical(parsed.fileType,parsed.rows||[]):[];
+  const materialMatches=await matchExistingMaterials(aggregated.length?aggregated:parsed.rows||[]);
   let staging={enabled:false,stored:0};
 
   if(raw.batchId){
-    await saveCanonicalPreview(raw.batchId,{file_type:parsed.fileType,row_count:parsed.rows.length,source:parsed.source,confidence:parsed.confidence,ai_enabled:parsed.aiEnabled,department_code:departmentCode,equipment,sheet_headers:parsed.sheetHeaders||{},sheet_mappings:parsed.sheetMappings||{},mapping_memory:parsed.mappingMemory||[]});
+    await saveCanonicalPreview(raw.batchId,{file_type:parsed.fileType,row_count:parsed.rows.length,source:parsed.source,confidence:parsed.confidence,ai_enabled:parsed.aiEnabled,department_code:departmentCode,equipment,sheet_headers:parsed.sheetHeaders||{},sheet_mappings:parsed.sheetMappings||{},mapping_memory:parsed.mappingMemory||[],material_matches:materialMatches});
     staging=await stageCanonicalRows(raw.batchId,parsed.fileType,parsed.rows||[]);
     await saveIngestionReview({batchId:raw.batchId,reviewType:'deterministic',decision:deterministic.decision,findings:deterministic.findings,summary:deterministic.summary});
     await markRawBatch(raw.batchId,'reviewed');
   }
 
-  const aggregated=['stock','open_pr','open_po'].includes(parsed.fileType)?snapshotRowsFromCanonical(parsed.fileType,parsed.rows||[]):[];
-  const mapping={source:parsed.source,confidence:parsed.confidence,memory_used:(parsed.mappingMemory||[]).length>0,ai_used:Boolean(parsed.aiEnabled),sheets:parsed.sheetMappings||{}};
-  const base={ok:true,mode:normalizedMode,raw_store:{enabled:raw.enabled,batch_id:raw.batchId,content_hash:raw.contentHash,total_raw_rows:raw.parsed.total_rows,sheets:raw.parsed.sheets.map(s=>({name:s.name,header_row:s.header_row,headers:s.headers,row_count:s.rows.length})),original_archived:raw.originalArchived,storage_provider:raw.storageProvider||'none'},canonical:{file_type:parsed.fileType,rows:parsed.rows.length,aggregated_materials:aggregated.length,source:parsed.source,confidence:parsed.confidence,ai_enabled:parsed.aiEnabled,mapping_memory:parsed.mappingMemory||[],staged:staging,sample:parsed.rows.slice(0,25)},review:{deterministic,mapping}};
+  const mapping={source:parsed.source,confidence:parsed.confidence,memory_used:(parsed.mappingMemory||[]).length>0,ai_used:Boolean(parsed.aiEnabled)};
+  const base={ok:true,mode:normalizedMode,raw_store:{enabled:raw.enabled,batch_id:raw.batchId,content_hash:raw.contentHash,total_raw_rows:raw.parsed.total_rows,original_archived:raw.originalArchived,storage_provider:raw.storageProvider||'none'},canonical:{file_type:parsed.fileType,rows:parsed.rows.length,aggregated_materials:aggregated.length,source:parsed.source,confidence:parsed.confidence,ai_enabled:parsed.aiEnabled,mapping_memory:parsed.mappingMemory||[],material_matches:materialMatches,staged:staging,sample:parsed.rows.slice(0,20)},review:{deterministic,mapping}};
 
   if(normalizedMode==='review')return base;
   if(!await rawWorkbookStoreEnabled())throw new Error('Commit refused: raw evidence storage is not active.');
