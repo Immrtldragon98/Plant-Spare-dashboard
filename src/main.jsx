@@ -4,4 +4,5 @@ import App from './app/App.jsx';
 import './styles.css';
 import './v4.css';
 import './planner.css';
+import './knowledge-v5.css';
 createRoot(document.getElementById('root')).render(<App/>);
