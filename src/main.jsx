@@ -5,4 +5,5 @@ import './styles.css';
 import './v4.css';
 import './planner.css';
 import './knowledge-v5.css';
+import './system.css';
 createRoot(document.getElementById('root')).render(<App/>);
