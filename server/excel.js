@@ -81,7 +81,6 @@ function masterSemanticMap(rows,h){
   if(partName>=0)map.spare_name=partName;
   if(shortText>=0&&description>=0){map.spare_name=description;map.description=shortText}
   else if(description>=0&&shortDescription>=0){map.spare_name=description;map.description=shortDescription}
-  else if(map.spare_name===undefined&&description>=0){map.spare_name=description;if(shortText>=0)map.description=shortText;else if(shortDescription>=0)map.description=shortDescription}
   if(installed>=0)map.required_qty=installed;else if(tiq>=0)map.required_qty=tiq;else if(qty>=0)map.required_qty=qty;
   return map;
 }
@@ -138,7 +137,6 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
         code=descCode;spareName=spareName||rawCode||null;description=null;
         issues.push({sheet:sheetName,row:i+1,reason:`High-confidence swapped columns detected: ${rawCode} → ${descCode}`});
       }
-      if(!code&&rawCode&&!spareName&&!noteRow(rawCode))spareName=rawCode;
       if(!code&&!spareName&&!description)continue;
       if(!code&&noteRow(rawCode)&&!description)continue;
       const manufacturer=clean(pick(row,map,'manufacturer'))||null;
