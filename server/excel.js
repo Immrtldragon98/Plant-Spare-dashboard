@@ -87,21 +87,31 @@ function masterSemanticMap(rows,h){
 }
 
 const equipMap={
- 'flap assembly':{equipment:'Coiler',sub_equipment:'Flap Assembly'},
- 'mandrel assembly':{equipment:'Coiler',sub_equipment:'Mandrel Assembly'},
- 'tibal':{equipment:'TiBAl',sub_equipment:null},
- 'casting':{equipment:'Casting',sub_equipment:null},
- 'degesser':{equipment:'Degasser',sub_equipment:null},
- 'bar straightner':{equipment:'Bar Straightener',sub_equipment:null},
- 'autoshear':{equipment:'Auto Shear',sub_equipment:null},
- 'bar cooler':{equipment:'Bar Cooler',sub_equipment:null},
- 'roughing mill':{equipment:'Roughing Mill',sub_equipment:null},
- 'finishing mill':{equipment:'Finishing Mill',sub_equipment:null},
- 'main shear':{equipment:'Main Shear',sub_equipment:null},
- 'furnace':{equipment:'Furnace',sub_equipment:null},
- 'hydraulic':{equipment:'Hydraulic',sub_equipment:null}
+ 'flap assembly':{sub_equipment:'Coiler'},
+ 'mandrel assembly':{sub_equipment:'Coiler'},
+ 'tibal':{sub_equipment:'TiBAl Rod'},
+ 'tibal rod':{sub_equipment:'TiBAl Rod'},
+ 'casting':{sub_equipment:'Casting'},
+ 'casting water circuit':{sub_equipment:'Casting Water Circuit'},
+ 'bar straightner':{sub_equipment:'Bar Straightener'},
+ 'bar straightener':{sub_equipment:'Bar Straightener'},
+ 'bar cooler':{sub_equipment:'Bar Cooler'},
+ 'roughing mill':{sub_equipment:'Roughing Mill'},
+ 'finishing mill':{sub_equipment:'Finishing Mill'},
+ 'rac':{sub_equipment:'RAC'},
+ 'dmat':{sub_equipment:'DMAT'},
+ 'main shear':{sub_equipment:'Main Shear'},
+ 'mainshear':{sub_equipment:'Main Shear'},
+ 'auto shear':{sub_equipment:'Cropping Shear'},
+ 'autoshear':{sub_equipment:'Cropping Shear'},
+ 'cropping shear':{sub_equipment:'Cropping Shear'},
+ 'coiler':{sub_equipment:'Coiler'},
+ 'emuslion circuit':{sub_equipment:'Emulsion Circuit'},
+ 'emulsion circuit':{sub_equipment:'Emulsion Circuit'},
+ 'quenchining circuit':{sub_equipment:'Quenching Circuit'},
+ 'quenching circuit':{sub_equipment:'Quenching Circuit'}
 };
-function sheetLocation(name){const n=norm(name);return equipMap[n]||{equipment:clean(name),sub_equipment:null}}
+function sheetLocation(name){const n=norm(name);return equipMap[n]||{sub_equipment:clean(name)}}
 
 export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''){
   if(!area)throw new Error('Area is required for spare-master import');
@@ -114,7 +124,7 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
     if(h.map.material_code===undefined){issues.push({sheet:sheetName,reason:'No Material Code column recognized',headers:h.headers});continue}
     const map=masterSemanticMap(rows,h);
     const detected=sheetLocation(sheetName);
-    const subEquipment=detected.sub_equipment||detected.equipment||clean(sheetName);
+    const subEquipment=detected.sub_equipment||clean(sheetName);
     for(let i=h.i+1;i<rows.length;i++){
       const row=rows[i];
       const rawCode=clean(pick(row,map,'material_code'));
