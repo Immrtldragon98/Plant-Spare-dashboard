@@ -7,33 +7,34 @@ const qty=v=>Number(v||0);
 export default function Knowledge({filters,canEdit,setNotice}){
   const[overview,setOverview]=useState(null),[loadingOverview,setLoadingOverview]=useState(false),[file,setFile]=useState(null),[busy,setBusy]=useState(false),[query,setQuery]=useState(''),[hits,setHits]=useState([]),[searching,setSearching]=useState(false);
   const[form,setForm]=useState({title:'',document_type:'Manual',material_code:''});
+  const selectedEquipment=filters.area||filters.equipment||'';
 
   const loadOverview=async()=>{
     setLoadingOverview(true);
     try{
       const qs=new URLSearchParams();
       if(filters.department_code)qs.set('department_code',filters.department_code);
-      if(filters.equipment)qs.set('equipment',filters.equipment);
+      if(selectedEquipment)qs.set('equipment',selectedEquipment);
       if(filters.sub_equipment)qs.set('sub_equipment',filters.sub_equipment);
       if(filters.discipline)qs.set('discipline',filters.discipline);
       setOverview(await request('/knowledge/equipment?'+qs));
     }catch(e){setNotice(e.message)}finally{setLoadingOverview(false)}
   };
-  useEffect(()=>{loadOverview()},[filters.department_code,filters.equipment,filters.sub_equipment,filters.discipline]);
+  useEffect(()=>{loadOverview()},[filters.department_code,filters.area,filters.equipment,filters.sub_equipment,filters.discipline]);
 
-  const upload=async()=>{if(!file||busy)return;setBusy(true);try{const fd=new FormData();fd.append('file',file);fd.append('department_code',filters.department_code||'');fd.append('equipment',filters.equipment||'');fd.append('sub_equipment',filters.sub_equipment||'');fd.append('discipline',filters.discipline||'');fd.append('title',form.title||file.name.replace(/\.[^.]+$/,''));fd.append('document_type',form.document_type);fd.append('material_code',form.material_code||'');const x=await request('/knowledge/upload',{method:'POST',body:fd});setNotice(`${x.title} added to this equipment knowledge.`);setFile(null);setForm({title:'',document_type:'Manual',material_code:''});await loadOverview()}catch(e){setNotice(e.message)}finally{setBusy(false)}};
-  const search=async(searchText=query)=>{const text=String(searchText||'').trim();if(!text)return;setQuery(text);setSearching(true);try{const x=await request('/knowledge/search',{method:'POST',body:JSON.stringify({query:text,context:{department_code:filters.department_code,equipment:filters.equipment,sub_equipment:filters.sub_equipment,discipline:filters.discipline},limit:8})});setHits(x.hits||[])}catch(e){setNotice(e.message)}finally{setSearching(false)}};
+  const upload=async()=>{if(!file||busy)return;setBusy(true);try{const fd=new FormData();fd.append('file',file);fd.append('department_code',filters.department_code||'');fd.append('equipment',selectedEquipment);fd.append('sub_equipment',filters.sub_equipment||'');fd.append('discipline',filters.discipline||'');fd.append('title',form.title||file.name.replace(/\.[^.]+$/,''));fd.append('document_type',form.document_type);fd.append('material_code',form.material_code||'');const x=await request('/knowledge/upload',{method:'POST',body:fd});setNotice(`${x.title} added to this equipment knowledge.`);setFile(null);setForm({title:'',document_type:'Manual',material_code:''});await loadOverview()}catch(e){setNotice(e.message)}finally{setBusy(false)}};
+  const search=async(searchText=query)=>{const text=String(searchText||'').trim();if(!text)return;setQuery(text);setSearching(true);try{const x=await request('/knowledge/search',{method:'POST',body:JSON.stringify({query:text,context:{department_code:filters.department_code,equipment:selectedEquipment,sub_equipment:filters.sub_equipment,discipline:filters.discipline},limit:8})});setHits(x.hits||[])}catch(e){setNotice(e.message)}finally{setSearching(false)}};
 
   const summary=overview?.summary||{},materials=overview?.materials||[],critical=overview?.critical||[],documents=overview?.documents||[],components=overview?.components||[];
-  const equipmentName=filters.sub_equipment||filters.equipment||'Current equipment';
+  const equipmentName=filters.sub_equipment||selectedEquipment||'Current equipment';
   const hierarchy=overview?.hierarchy?.[0];
 
   return <>
     <div className="pageTitle"><div><span className="eyebrow">EQUIPMENT KNOWLEDGE</span><h1>{equipmentName}</h1><p>Learn the equipment, its spares, drawings, manuals and current material position before planning maintenance.</p></div></div>
 
-    {!filters.equipment&&!filters.sub_equipment&&<div className="emptyState"><h3>Select an equipment</h3><p>Choose Equipment or Sub-equipment from the planner filters. Plant Knowledge will then build a focused learning workspace for it.</p></div>}
+    {!selectedEquipment&&!filters.sub_equipment&&<div className="emptyState"><h3>Select an equipment</h3><p>Choose Equipment or Sub-equipment from the planner filters. Plant Knowledge will then build a focused learning workspace for it.</p></div>}
 
-    {(filters.equipment||filters.sub_equipment)&&<>
+    {(selectedEquipment||filters.sub_equipment)&&<>
       <section className="equipmentKnowledgeHero">
         <div className="equipmentKnowledgeTitle"><span>YOU ARE WORKING ON</span><strong>{equipmentName}</strong><p>{hierarchy?[hierarchy.department,hierarchy.sub_department,hierarchy.equipment,hierarchy.sub_equipment].filter(Boolean).join(' → '):'Loading plant hierarchy…'}</p></div>
         <div className="equipmentKnowledgeStats"><div><strong>{summary.materials||0}</strong><span>Linked spares</span></div><div><strong>{summary.critical||0}</strong><span>Below required</span></div><div><strong>{summary.uncovered||0}</strong><span>Uncovered</span></div><div><strong>{summary.documents||0}</strong><span>Documents</span></div></div>
