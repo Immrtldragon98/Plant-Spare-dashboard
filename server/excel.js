@@ -94,6 +94,7 @@ const equipMap={
  'casting':{sub_equipment:'Casting'},
  'casting water circuit':{sub_equipment:'Casting Water Circuit'},
  'bar straightner':{sub_equipment:'Bar Straightener'},
+ 'bar straigthener':{sub_equipment:'Bar Straightener'},
  'bar straightener':{sub_equipment:'Bar Straightener'},
  'bar cooler':{sub_equipment:'Bar Cooler'},
  'roughing mill':{sub_equipment:'Roughing Mill'},
