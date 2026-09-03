@@ -32,9 +32,9 @@ export function inspectWorkbook(buffer){
     for(let i=0;i<matrix.length;i++){
       const cells=Array.isArray(matrix[i])?matrix[i]:[];
       if(!cells.some(v=>v!==null&&v!==undefined&&clean(v)!==''))continue;
-      const rowObject={};
-      if(headers.length&&i>headerIndex)headers.forEach((h,idx)=>{if(cells[idx]!==undefined)rowObject[h]=cells[idx]});
-      rows.push({row_number:i+1,cells,row_object:Object.keys(rowObject).length?rowObject:null,row_hash:hash(cells)});
+      // Cells + headers in workbook_meta are enough to reconstruct the original row.
+      // Do not duplicate the same values into row_object for new uploads.
+      rows.push({row_number:i+1,cells,row_hash:hash(cells)});
     }
     sheets.push({name:sheetName,header_row:headerIndex>=0?headerIndex+1:null,headers,rows});
   }
@@ -50,11 +50,11 @@ export async function archiveRawWorkbook({file,sourceType='excel',uploadedBy=nul
     await client.query('BEGIN');
     const batch=(await client.query(`INSERT INTO raw_upload_batches(import_history_id,source_name,source_type,content_hash,workbook_meta,storage_provider,storage_bucket,storage_key,original_archived,status,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'received',$10) RETURNING id,uploaded_at`,[importHistoryId,file.originalname,sourceType,contentHash,JSON.stringify({sheet_names:parsed.sheet_names,total_rows:parsed.total_rows,sheets:parsed.sheets.map(s=>({name:s.name,header_row:s.header_row,headers:s.headers,row_count:s.rows.length})),...metadata}),archived.archived?archived.provider:'db-only',archived.bucket||null,archived.key||null,Boolean(archived.archived),uploadedBy])).rows[0];
     const flat=[];
-    for(const sheet of parsed.sheets)for(const row of sheet.rows)flat.push({sheet_name:sheet.name,row_number:row.row_number,cells:row.cells,row_object:row.row_object,row_hash:row.row_hash});
+    for(const sheet of parsed.sheets)for(const row of sheet.rows)flat.push({sheet_name:sheet.name,row_number:row.row_number,cells:row.cells,row_hash:row.row_hash});
     for(const part of chunks(flat,250)){
       await client.query(`INSERT INTO raw_upload_rows(batch_id,sheet_name,row_number,cells,row_object,row_hash)
-        SELECT $1,x.sheet_name,x.row_number,x.cells,x.row_object,x.row_hash
-        FROM jsonb_to_recordset($2::jsonb) AS x(sheet_name text,row_number int,cells jsonb,row_object jsonb,row_hash text)`,[batch.id,JSON.stringify(part)]);
+        SELECT $1,x.sheet_name,x.row_number,x.cells,NULL::jsonb,x.row_hash
+        FROM jsonb_to_recordset($2::jsonb) AS x(sheet_name text,row_number int,cells jsonb,row_hash text)`,[batch.id,JSON.stringify(part)]);
     }
     await client.query('COMMIT');
     return {enabled:true,batchId:batch.id,uploadedAt:batch.uploaded_at,contentHash,parsed,originalArchived:Boolean(archived.archived),storageProvider:archived.archived?archived.provider:'db-only'};
