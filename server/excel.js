@@ -138,7 +138,6 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
         code=descCode;spareName=spareName||rawCode||null;description=null;
         issues.push({sheet:sheetName,row:i+1,reason:`High-confidence swapped columns detected: ${rawCode} → ${descCode}`});
       }
-      if(!code&&rawCode&&!spareName&&!noteRow(rawCode))spareName=rawCode;
       if(!code&&!spareName&&!description)continue;
       if(!code&&noteRow(rawCode)&&!description)continue;
       const manufacturer=clean(pick(row,map,'manufacturer'))||null;
