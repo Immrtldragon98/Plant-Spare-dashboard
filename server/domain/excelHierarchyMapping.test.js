@@ -40,3 +40,18 @@ test('WRM sheets map material usages to equipment and canonical sub-equipment',(
     assert.equal(row.sub_equipment,expected[row.source_sheet]);
   }
 });
+
+
+test('placeholder and invalid code cells never become spare names',()=>{
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ['Material Code','Description'],
+    ['NOT MADE','Unknown item'],
+    ['MGS314117053696 -2pc','Oil seal']
+  ]),'Coiler');
+  const buffer=XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
+  const parsed=parseMasterExcel(buffer,'WRM','3102_CH2','Mechanical');
+  assert.equal(parsed.materials.length,2);
+  assert.deepEqual(parsed.materials.map(x=>x.spare_name),[null,null]);
+  assert.deepEqual(parsed.materials.map(x=>x.description),['Unknown item','Oil seal']);
+});
