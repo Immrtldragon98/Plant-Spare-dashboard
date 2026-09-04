@@ -5,6 +5,7 @@ import {listKnowledgeDocuments,saveKnowledgeDocument,searchKnowledge,knowledgeSt
 import {getKnowledgePage} from '../services/knowledgeCatalog.js';
 import {beginIngestionJob,completeIngestionJob,failIngestionJob,listIngestionJobs,getIngestionJob} from '../services/ingestionJobs.js';
 import {getEquipmentKnowledge,getComponentDetail,createEquipmentComponent,linkComponentMaterial,linkComponentDocument} from '../services/equipmentKnowledge.js';
+import {askPlanner,indexPlannerProposals,listFactProposals,reviewFactProposal} from '../services/plannerRag.js';
 
 const r=Router();
 const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:20*1024*1024}});
@@ -29,9 +30,25 @@ r.post('/knowledge/upload',auth,allow('planner','admin'),upload.single('file'),a
   const job=await beginIngestionJob({jobType:'knowledge_document',sourceName:req.file.originalname,requestId:req.requestId,payload:{mime_type:req.file.mimetype,file_size:req.file.size,metadata},createdBy:req.user.id});
   try{
     const out=await saveKnowledgeDocument({file:req.file,metadata,userId:req.user.id});
-    await completeIngestionJob(job,{document_id:out.id,chunks:out.chunks,originalArchived:out.originalArchived,deduplicated:out.deduplicated});
-    res.json({ok:true,...out,jobId:job.id||null,message:out.originalArchived?'Document indexed for RAG and original file archived in object storage.':'Document indexed for RAG. Original binary is not archived because object storage is not configured.'});
+    const proposals=out.deduplicated?{created:0}:await indexPlannerProposals(out.id);
+    await completeIngestionJob(job,{document_id:out.id,chunks:out.chunks,proposals:proposals.created,originalArchived:out.originalArchived,deduplicated:out.deduplicated});
+    res.json({ok:true,...out,proposals:proposals.created,jobId:job.id||null,message:out.originalArchived?'Document indexed for RAG and original file archived in object storage.':'Document indexed for RAG. Original binary is not archived because object storage is not configured.'});
   }catch(error){await failIngestionJob(job,error);throw error}
+});
+
+r.post('/knowledge/ask',auth,async(req,res)=>{
+  const question=String(req.body?.question||'').trim();
+  if(!question)return res.status(400).json({error:'Planner question required'});
+  const context=req.body?.context&&typeof req.body.context==='object'?req.body.context:{};
+  res.json(await askPlanner(question,context,req.body?.limit||8));
+});
+
+r.get('/knowledge/proposals',auth,allow('planner','admin'),async(req,res)=>{
+  res.json({rows:await listFactProposals({status:req.query.status??'pending',limit:req.query.limit})});
+});
+
+r.post('/knowledge/proposals/:id/review',auth,allow('planner','admin'),async(req,res)=>{
+  res.json({ok:true,proposal:await reviewFactProposal(req.params.id,String(req.body?.status||''),req.user.id)});
 });
 
 r.post('/knowledge/search',auth,async(req,res)=>{

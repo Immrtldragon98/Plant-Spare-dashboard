@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {chunkText} from './knowledge.js';
 import {buildObjectKey} from '../storage/objectStorage.js';
+import {extractPlannerFacts} from './plannerRag.js';
 
 test('knowledge chunking respects maximum chunk count',()=>{
   const text='Bearing lubrication interval and mounting guidance. '.repeat(500);
@@ -17,4 +18,12 @@ test('object key is deterministic for identical binary content',()=>{
   const a=buildObjectKey(file,meta),b=buildObjectKey(file,meta);
   assert.equal(a,b);
   assert.match(a,/3102_CH2\/WRM\/Manual\/\d{4}-\d{2}-\d{2}\/[a-f0-9]{16}-SKF-Bearing-Manual\.pdf$/);
+});
+
+test('planner extraction creates reviewable evidence facts',()=>{
+  const facts=extractPlannerFacts('Root cause: bearing lubrication failed. Corrective action: replace MMT311715050461 and verify alignment. RPN 180.');
+  assert.ok(facts.some(x=>x.type==='root_cause'));
+  assert.ok(facts.some(x=>x.type==='corrective_action'));
+  assert.ok(facts.some(x=>x.type==='material_code'&&x.value.material_code==='MMT311715050461'));
+  assert.ok(facts.some(x=>x.type==='fmea_risk'));
 });
