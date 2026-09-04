@@ -45,8 +45,7 @@ r.get('/options',auth,async(req,res)=>{
   const uniq=k=>[...new Set(rows.map(x=>x[k]).filter(Boolean))].sort();
   res.json({
     departments,
-    areas,
-    equipment:[...new Set(hierarchyEquipment.map(x=>x.name))].sort(),
+    // Keep legacy clients compatible, but expose only hierarchy-backed equipment.\n    areas:[...new Set(hierarchyEquipment.map(x=>x.name))].sort(),\n    equipment:[...new Set(hierarchyEquipment.map(x=>x.name))].sort(),
     equipment_hierarchy:hierarchyEquipment,
     sub_equipment:uniq('sub_equipment_name'),
     vendors,

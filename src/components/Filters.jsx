@@ -17,7 +17,7 @@ export default function Filters({options,search,setSearch,filters,setFilters}){
     </select>
     <select aria-label="Equipment" title="Equipment" value={filters.area} onChange={e=>change('area',e.target.value)}>
       <option value="">All Equipment</option>
-      {(options.areas||[]).map(v=><option value={v} key={v}>{v}</option>)}
+      {(options.equipment||[]).map(v=><option value={v} key={v}>{v}</option>)}
     </select>
     <select aria-label="Sub-equipment" title="Sub-equipment" value={filters.sub_equipment} onChange={e=>change('sub_equipment',e.target.value)}>
       <option value="">All Sub-equipment</option>
