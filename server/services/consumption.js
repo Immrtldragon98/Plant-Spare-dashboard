@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import * as XLSX from 'xlsx';
 import {q,pool} from '../db.js';
 
-const codeRe=/^[A-Z]{3}\\d{12}$/;
+const codeRe=/^[A-Z]{3}\d{12}$/;
 const movementSigns={'201':1,'202':-1,'261':1,'262':-1,'551':1};
 const norm=v=>String(v??'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'');
 const first=(row,names)=>{const keys=Object.keys(row);const key=keys.find(k=>names.includes(norm(k)));return key===undefined?null:row[key]};
