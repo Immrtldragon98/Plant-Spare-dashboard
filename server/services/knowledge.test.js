@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {chunkText} from './knowledge.js';
-import {buildObjectKey} from '../storage/objectStorage.js';\nimport {extractPlannerFacts} from './plannerRag.js';
+import {buildObjectKey} from '../storage/objectStorage.js';
+import {extractPlannerFacts} from './plannerRag.js';
 
 test('knowledge chunking respects maximum chunk count',()=>{
   const text='Bearing lubrication interval and mounting guidance. '.repeat(500);
