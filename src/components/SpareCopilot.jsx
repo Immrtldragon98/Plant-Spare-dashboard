@@ -3,7 +3,7 @@ import {request} from '../api/client.js';
 import './SpareCopilot.css';
 
 const agents=[
-  {id:'planner',label:'Planner',starter:['Which materials are PR eligible?','Show zero-stock spares without PO','Draft procurement justification for the highest risk spare']},
+  {id:'planner',label:'Planner',starter:['Show monthly consumption for MMT311715050461','Which materials are PR eligible?','Show zero-stock spares without PO','Draft procurement justification for the highest risk spare']},
   {id:'mechanical',label:'Mechanical',starter:['Explain this mechanical spare from its description','Calculate bearing L10 life','What data do I need to identify this spare correctly?']},
   {id:'electrical',label:'Electrical',starter:['Estimate three-phase motor current','Calculate synchronous motor speed','What nameplate data should I capture for this motor?']},
   {id:'reliability',label:'Reliability',starter:['Which spares deserve planner review first?','What evidence is missing for a repair-vs-replace decision?','Explain the spare character of this material']},

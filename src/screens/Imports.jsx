@@ -1,6 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import UniversalImportInbox from '../components/UniversalImportInbox.jsx';
 import DataReviewQueue from '../components/DataReviewQueue.jsx';
+import ConsumptionImport from '../components/ConsumptionImport.jsx';
 import {request} from '../api/client.js';
 
 const disciplines=['','Mechanical','Electrical','Instrumentation','Operation','Process','Common / Other'];
@@ -19,6 +20,7 @@ export default function Imports({filters,options,reload,setNotice,refreshToken=0
     <section className="importContext simpleContextCard"><div><strong>Where does this file belong?</strong><span>Set context once before upload.</span></div><div className="importContextFields"><label>Sub-department<select value={departmentCode} onChange={e=>{setDepartmentCode(e.target.value);setArea('')}}>{(options.departments||[]).map(d=><option value={d.department_code} key={d.department_code}>{d.department_code} — {d.department_name}</option>)}</select></label><label>Equipment<select value={area} onChange={e=>setArea(e.target.value)}><option value="">Not required / mixed</option>{areas.map(a=><option value={a} key={a}>{a}</option>)}</select></label><label>Discipline<select value={discipline} onChange={e=>setDiscipline(e.target.value)}>{disciplines.map(d=><option key={d||'blank'} value={d}>{d||'Read from Excel / blank'}</option>)}</select></label></div><div className="contextLine">{selectedDepartment?.department_code||departmentCode||'No department'}{area?` → ${area}`:''}{discipline?` · ${discipline}`:''}</div></section>
 
     <UniversalImportInbox departmentCode={departmentCode} equipment={area} discipline={discipline} reload={refreshAll} setNotice={setNotice}/>
+    <ConsumptionImport reload={refreshAll} setNotice={setNotice}/>
 
     <details className="reviewPanel"><summary>Review held batches</summary><p className="muted">Only use this when an import has a blocking validation problem.</p><DataReviewQueue refreshToken={refreshToken+localRefresh} setNotice={setNotice}/></details>
 
