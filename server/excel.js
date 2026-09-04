@@ -131,7 +131,7 @@ export function parseMasterExcel(buffer,area,departmentCode,defaultDiscipline=''
       let code=canonicalMaterialCode(rawCode);
       let spareName=clean(pick(row,map,'spare_name'))||null;
       let description=clean(pick(row,map,'description'))||null;
-      if(spareName&&description&&spareName===description)description=null;
+      if(spareName&&description&&spareName.toLowerCase()===description.toLowerCase())spareName=null;
       const descCode=canonicalMaterialCode(description);
       if(!code&&descCode&&clean(description).toUpperCase()===descCode){
         code=descCode;spareName=spareName||rawCode||null;description=null;

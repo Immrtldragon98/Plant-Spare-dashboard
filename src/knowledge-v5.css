@@ -39,3 +39,33 @@
 .knowledgeDocGrid article>code{font-size:12px;color:#526789}
 @media(max-width:1050px){.equipmentKnowledgeHero{grid-template-columns:1fr}.equipmentKnowledgeStats{grid-template-columns:repeat(2,1fr)}.knowledgeAttentionGrid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.learningGrid,.knowledgeAttentionGrid{grid-template-columns:1fr}.equipmentKnowledgeStats{grid-template-columns:1fr 1fr}.equipmentKnowledgeStats>div{border-left:0;border-top:1px solid #edf0f5}.equipmentKnowledgeStats>div:nth-child(-n+2){border-top:0}}
+
+.knowledgeScope{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;background:#fff;border:1px solid #e3e8f0;border-radius:16px;padding:20px;margin-bottom:18px}
+.knowledgeScope>div:first-child strong,.knowledgeScope>div:first-child span{display:block}
+.knowledgeScope>div:first-child span{color:#75819a;font-size:13px;line-height:1.5;margin-top:5px}
+.knowledgeScopeFields{display:flex;gap:10px;flex-wrap:wrap}
+.knowledgeScopeFields label{font-size:12px;font-weight:700;color:#65718a}
+.knowledgeScopeFields select{display:block;min-width:180px;margin-top:6px}
+.plannerWorkflow{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:12px}
+.plannerWorkflow article{background:#fff;border:1px solid #e3e8f0;border-radius:14px;padding:17px}
+.plannerWorkflow strong{display:block;color:#27324a;font-size:15px}
+.plannerWorkflow p{color:#6f7d95;font-size:13px;line-height:1.55;margin:7px 0 0}
+.maintenanceLibrary{margin-top:30px}
+.maintenanceLibrary .sectionHead{align-items:flex-end}
+.guideTabs{display:flex;gap:8px}
+.guideTabs button{background:#fff;color:#59667e;border:1px solid #dce3ee;padding:8px 13px}
+.guideTabs button.active{background:#2563ff;color:#fff;border-color:#2563ff}
+.maintenanceTopicGrid{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:12px}
+.maintenanceTopicGrid details{background:#fff;border:1px solid #e3e8f0;border-radius:15px;overflow:hidden}
+.maintenanceTopicGrid summary{cursor:pointer;padding:18px;list-style:none}
+.maintenanceTopicGrid summary::-webkit-details-marker{display:none}
+.maintenanceTopicGrid summary span,.maintenanceTopicGrid summary strong,.maintenanceTopicGrid summary small{display:block}
+.maintenanceTopicGrid summary span{font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:800;color:#2563ff}
+.maintenanceTopicGrid summary strong{font-size:18px;color:#27324a;margin-top:5px}
+.maintenanceTopicGrid summary small{font-size:13px;line-height:1.5;color:#75819a;margin-top:7px}
+.maintenanceTopicGrid details>div{border-top:1px solid #edf0f5;padding:8px 18px 18px}
+.maintenanceTopicGrid h4{font-size:13px;color:#34405a;margin:14px 0 6px}
+.maintenanceTopicGrid ul{padding-left:19px;margin:0}
+.maintenanceTopicGrid li{font-size:13px;color:#667087;line-height:1.55;margin:3px 0}
+@media(max-width:1050px){.knowledgeScope{align-items:stretch;flex-direction:column}.knowledgeScopeFields{display:grid;grid-template-columns:repeat(3,1fr)}.knowledgeScopeFields select{width:100%;min-width:0}.plannerWorkflow{grid-template-columns:repeat(2,minmax(220px,1fr))}}
+@media(max-width:700px){.knowledgeScopeFields,.plannerWorkflow,.maintenanceTopicGrid{grid-template-columns:1fr}.maintenanceLibrary .sectionHead{align-items:flex-start}.guideTabs{margin-top:10px}}

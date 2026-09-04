@@ -55,3 +55,16 @@ test('placeholder and invalid code cells never become spare names',()=>{
   assert.deepEqual(parsed.materials.map(x=>x.spare_name),[null,null]);
   assert.deepEqual(parsed.materials.map(x=>x.description),['Unknown item','Oil seal']);
 });
+
+
+test('duplicate Spare Name and Description keeps description and blanks name',()=>{
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ['Material Code','Spare Name','Short Description'],
+    ['MMT000000000099','HYDRAULIC VALVE','HYDRAULIC VALVE']
+  ]),'RAC');
+  const buffer=XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
+  const [row]=parseMasterExcel(buffer,'WRM','3102_CH2','Mechanical').materials;
+  assert.equal(row.spare_name,null);
+  assert.equal(row.description,'HYDRAULIC VALVE');
+});
