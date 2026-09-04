@@ -6,6 +6,7 @@ import {getConsumptionStudy,importConsumptionMovements} from '../services/consum
 
 const r=Router();
 const codeRe=/^[A-Z]{3}\d{12}$/;
+const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:20*1024*1024}});
 
 r.get('/material-events/status',auth,async(req,res)=>{
   res.json({enabled:await materialEventsAvailable()});
