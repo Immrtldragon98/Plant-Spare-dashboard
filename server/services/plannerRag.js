@@ -15,7 +15,7 @@ const labels=[
 ];
 
 export function extractPlannerFacts(text){
-  const blocks=clean(text).split(/\n+|(?<=[.!?])\s+/).map(x=>clip(x,700)).filter(x=>x.length>12);
+  const blocks=clean(text).split(/\n+|(?<=[.!?])\s+/).map(x=>clip(x,700)).filter(x=>x.length>4);
   const facts=[];
   for(const body of blocks){
     for(const code of body.toUpperCase().match(materialPattern)||[])facts.push({type:'material_code',key:code,value:{material_code:code},excerpt:body,confidence:.98});
