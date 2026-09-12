@@ -2,11 +2,10 @@ import React,{useEffect,useState} from 'react';
 import {request} from '../api/client.js';
 
 const disciplineDefaults=['Mechanical','Electrical','Instrumentation','Operation','Process','Common / Other'];
-const cleanParent=v=>['CH2_WRM','WRM','CH2_ICM','ICM','CH2_PFA','PFA','CH2_UTILITY','UTILITY'].includes(String(v||'').toUpperCase())?null:v;
 
 export default function Equipment({options,filters,setFilters,setTab,setNotice}){
   const[groups,setGroups]=useState([]),[loading,setLoading]=useState(false);
-  useEffect(()=>{if(!filters.department_code)return;const qs=new URLSearchParams({department_code:filters.department_code,area:filters.area||'',equipment:'',discipline:filters.discipline||''});setLoading(true);request('/equipment/summary?'+qs).then(rows=>setGroups((rows||[]).map(r=>({name:r.sub_equipment||cleanParent(r.equipment)||'(Equipment level)',count:Number(r.usage_count||0),sap:r.sap_location_code,disciplines:new Set(String(r.disciplines||'').split(' · ').filter(Boolean)),equipment:filters.area||cleanParent(r.equipment)||'',subEquipment:r.sub_equipment||''})))).catch(e=>setNotice?.(e.message)).finally(()=>setLoading(false))},[filters.department_code,filters.area,filters.discipline]);
+  useEffect(()=>{if(!filters.department_code)return;const qs=new URLSearchParams({department_code:filters.department_code,area:filters.area||'',equipment:'',discipline:filters.discipline||''});setLoading(true);request('/equipment/summary?'+qs).then(rows=>setGroups((rows||[]).map(r=>({name:r.sub_equipment||'(Equipment level)',count:Number(r.usage_count||0),sap:r.sap_location_code,disciplines:new Set(String(r.disciplines||'').split(' · ').filter(Boolean)),equipment:filters.area||r.equipment||'',subEquipment:r.sub_equipment||''})))).catch(e=>setNotice?.(e.message)).finally(()=>setLoading(false))},[filters.department_code,filters.area,filters.discipline]);
   const equipment=(options.equipment_hierarchy||[]).map(item=>({name:item.name,code:item.code}));
   const disciplines=[...new Set([...(options.disciplines||[]),...disciplineDefaults])];
   const chooseEquipment=value=>setFilters(f=>({...f,area:value,equipment:'',sub_equipment:''}));
