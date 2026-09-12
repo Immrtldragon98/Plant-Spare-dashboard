@@ -4,13 +4,13 @@ import {auth,allow} from '../auth.js';
 import {getDepartment} from '../services/locationService.js';
 const r=Router();
 
-async function ensureSubDepartment(x){
+async function ensureDepartment(x){
   const code=String(x.department_code||'').trim(),name=String(x.department_name||'').trim();
-  if(!code)throw new Error('Sub-department Code is required');
+  if(!code)throw new Error('Department code is required');
   let dept=await getDepartment(code);
   if(!dept){
-    if(!name)throw new Error('Sub-department name is required for a new code');
-    dept=(await q(`INSERT INTO departments(plant_code,department_code,department_name,active) VALUES($1,$2,$3,true) ON CONFLICT(department_code) DO UPDATE SET department_name=EXCLUDED.department_name,active=true,updated_at=NOW() RETURNING *`,[x.plant_code||'3102',code,name])).rows[0];
+    if(!name)throw new Error('Department name is required for a new code');
+    dept=(await q(`INSERT INTO departments(plant_code,department_code,department_name,active) VALUES($1,$2,$3,true) ON CONFLICT(department_code) DO UPDATE SET department_name=EXCLUDED.department_name,active=true,updated_at=NOW() RETURNING *`,[x.plant_code,code,name])).rows[0];
   }
   return dept;
 }
@@ -61,7 +61,7 @@ const findDuplicate=async({excludeId=null,departmentCode,areaName,equipmentName=
 };
 
 r.post('/hierarchy',auth,allow('admin'),async(req,res)=>{
-  const x=req.body,dept=await ensureSubDepartment(x);if(!x.area_name)return res.status(400).json({error:'Equipment is required'});
+  const x=req.body;if(!x.plant_code||!x.department_code||!x.department_name||!x.area_name||!x.equipment_name||!x.sub_equipment_name)return res.status(400).json({error:'Plant, Department, Sub-department, Equipment and Sub-equipment are required'});const dept=await ensureDepartment(x);
   const subDepartmentName=String(x.department_name||dept.department_name||'').trim();
   if(subDepartmentName&&subDepartmentName!==dept.department_name){
     await q('UPDATE departments SET department_name=$1,updated_at=NOW() WHERE id=$2',[subDepartmentName,dept.id]);
@@ -75,7 +75,7 @@ r.post('/hierarchy',auth,allow('admin'),async(req,res)=>{
 
 r.put('/hierarchy/:id',auth,allow('admin'),async(req,res)=>{
   const old=(await q('SELECT * FROM locations WHERE id=$1',[req.params.id])).rows[0];if(!old)return res.status(404).json({error:'Location not found'});
-  const x={...old,...req.body},dept=await ensureSubDepartment(x);
+  const x={...old,...req.body},dept=await ensureDepartment(x);
   const subDepartmentName=String(x.department_name||dept.department_name||'').trim();
   const duplicate=await findDuplicate({excludeId:Number(req.params.id),departmentCode:x.department_code,areaName:x.area_name,equipmentName:x.equipment_name||'',subEquipmentName:x.sub_equipment_name||''});
   const client=await pool.connect();
@@ -102,5 +102,5 @@ r.put('/hierarchy/:id',auth,allow('admin'),async(req,res)=>{
   }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
 });
 
-r.post('/departments',auth,allow('admin'),async(req,res)=>{const {plant_code='3102',department_code,department_name}=req.body;if(!department_code||!department_name)return res.status(400).json({error:'Department code and name are required'});const x=await q(`INSERT INTO departments(plant_code,department_code,department_name) VALUES($1,$2,$3) RETURNING *`,[plant_code,department_code,department_name]);res.json(x.rows[0])});
+r.post('/departments',auth,allow('admin'),async(req,res)=>{const {plant_code='',department_code,department_name}=req.body;if(!plant_code||!department_code||!department_name)return res.status(400).json({error:'Plant code, department code and department name are required'});const x=await q(`INSERT INTO departments(plant_code,department_code,department_name) VALUES($1,$2,$3) RETURNING *`,[plant_code,department_code,department_name]);res.json(x.rows[0])});
 export default r;
